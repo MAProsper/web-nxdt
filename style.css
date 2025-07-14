@@ -1,0 +1,98 @@
+:root {
+    --text-color: #f2f2f2;
+    --background-color: #2d2d2d;
+    --highlight-dark: #2996CE;
+    --highlight-light: #72EBF6;
+}
+
+* {
+    color: var(--text-color);
+    font-family: sans;
+}
+
+body,
+dialog {
+    background-color: var(--background-color);
+}
+
+label {
+    padding: 0.5rem 1rem;
+    color: #b3b0b0;
+    display: block;
+    margin-bottom: 1rem;
+}
+
+body {
+    margin: 0 auto;
+    max-width: 50rem;
+}
+
+h1 {
+    margin: 0;
+    border-bottom: solid 1px;
+    padding: 0.8rem 2.5rem;
+    font-weight: normal;
+    font-size: 1.8rem;
+}
+
+ul {
+    margin: 2.5rem 30rem;
+    list-style-type: none;
+    margin-inline: auto;
+    padding-inline: 5rem;
+}
+
+button {
+    border-color: #444;
+    border-width: 1px;
+    border-style: solid none;
+    padding: 1rem;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    background: none;
+    font-size: 1.3em;
+}
+
+button>div:last-child {
+    color: #01ffc8;
+}
+
+
+button:focus {
+    outline-color: #48cbdd;
+    animation: focusRing 1s linear infinite;
+    outline-style: solid;
+    outline-width: 4px;
+}
+
+footer {
+    border-top: solid 1px;
+    padding: 0.8rem 2.5rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 2rem;
+}
+
+dialog {
+    border: none;
+    box-shadow: rgba(10, 21, 34, 0.75) 0 0 0 100vmin;
+    padding: 1rem 2rem;
+    font-size: 1.3rem;
+    background-color: #464646;
+    border-radius: 4px;
+}
+
+@keyframes focusRing {
+    0% {
+        outline-color: var(--highlight-light);
+    }
+
+    50% {
+        outline-color: var(--highlight-dark);
+    }
+
+    100% {
+        outline-color: var(--highlight-light);
+    }
+}

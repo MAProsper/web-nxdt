@@ -1,12 +1,39 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <meta charset="UTF-8" />
-        <title>NXDumpTool</title>
-    </head>
-    <body>
-        <button id="dst">Select output</button>
-        <button id="go">Connect device</button>
-        <script src="script.js"></script>
-    </body>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Web-NXDT client</title>
+    <link href="style.css" rel="stylesheet" />
+</head>
+
+<body>
+    <h1>Web-NXDT - NXDumpTool (host)</h1>
+    <ul>
+        <li><button id="dst">
+                <div>Destination directory</div>
+                <div>Not selected</div>
+            </button></li>
+        <li>
+            <label for="dst">Requires a browser with File System API (showDirectoryPicker) support.</label>
+        </li>
+        <li><button id="go">
+                <div>Source device</div>
+                <div>Not connected</div>
+            </button></li>
+        <li>
+            <label for="go">Requires a browser with WebUSB API support.</label>
+        </li>
+    </ul>
+    <dialog>
+        <p>Transfering: <span id="name">The Legend of Zelda: Breath of the Wild</span></p>
+        <progress id="bar" value="0" max="0"></progress>
+    </dialog>
+    <footer>
+        <div>NXDumpTool by DarkMatterCore</div>
+        <div>Web-NXDT by MAProsper</div>
+    </footer>
+    <script src="script.js"></script>
+</body>
+
 </html>

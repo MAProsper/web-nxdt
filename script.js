@@ -6,9 +6,6 @@ USB_DEV_PID = 0x3000
 USB_DEV_MANUFACTURER = 'DarkMatterCore'
 USB_DEV_PRODUCT = 'nxdumptool'
 
-// USB timeout (milliseconds).
-USB_TRANSFER_TIMEOUT = 10000
-
 // USB transfer block size.
 USB_TRANSFER_BLOCK_SIZE = 0x800000
 
