@@ -1,25 +1,60 @@
+/* Global rules */
+@property --highlight-color {
+  syntax: "<color>";
+  initial-value: #72EBF6;
+  inherits: true;
+}
+
 :root {
-    --text-color: #f2f2f2;
-    --background-color: #2d2d2d;
+    --text-color: #2d2d2d;
+    --background-color: #f2f2f2;
+    --separator-light: #dcdcdc;
+    --separator-bold: #2c2c2c;
     --highlight-dark: #2996CE;
     --highlight-light: #72EBF6;
-}
-
-* {
-    color: var(--text-color);
+    animation: highlight 1s linear infinite;
     font-family: sans;
+    color: var(--text-color);
+    cursor: default;
 }
 
-body,
-dialog {
+@media (prefers-color-scheme: dark) {
+    :root {
+        --text-color: #f2f2f2;
+        --separator-light: #444;
+        --background-color: #2d2d2d;
+    }
+}
+
+@keyframes highlight {
+    0% {
+        --highlight-color: var(--highlight-light);
+    }
+
+    50% {
+        --highlight-color: var(--highlight-dark);
+    }
+
+    100% {
+        --highlight-color: var(--highlight-light);
+    }
+}
+
+:focus {
+    border-radius: 4px;
+    outline-style: solid;
+    outline-width: 4px;
+    outline-color: var(--highlight-color);
+}
+
+/* Generic elements */
+body, dialog {
     background-color: var(--background-color);
 }
 
-label {
-    padding: 0.5rem 1rem;
-    color: #b3b0b0;
+small {
     display: block;
-    margin-bottom: 1rem;
+    color: #b3b0b0;
 }
 
 body {
@@ -27,47 +62,87 @@ body {
     max-width: 50rem;
 }
 
-h1 {
+button {
+    border: none;
+    font-size: inherit;
+    font-family: inherit;
+    color: inherit;
+    background: none;
+}
+
+button:not(:disabled) {
+    cursor: pointer;
+}
+
+button:disabled * {
+    color: gray !important;
+}
+
+button:not([disabled]):hover {
+    background-color: #3c3c3c;
+}
+
+dialog:focus {
+    outline: none;
+}
+
+progress {
+    width: 100%;
+    height: 0.5rem;
+    overflow: hidden;
+    border-radius: 1rem;
+    border: 1px solid var(--separator-light);
+}
+
+progress::-webkit-progress-bar {
+    background-color: var(--separator-light);
+}
+
+progress::-webkit-progress-value {
+    background-color: var(--highlight-color);
+}
+
+/* Page rules */
+header {
     margin: 0;
-    border-bottom: solid 1px;
+    border-bottom: solid 1px var(--separator-bold);
     padding: 0.8rem 2.5rem;
     font-weight: normal;
     font-size: 1.8rem;
 }
 
-ul {
+main ul {
+    font-size: 1.3rem;
     margin: 2.5rem 30rem;
     list-style-type: none;
     margin-inline: auto;
     padding-inline: 5rem;
 }
 
-button {
-    border-color: #444;
+main li {
+    border-top: solid;
+    border-color: var(--separator-light);
     border-width: 1px;
-    border-style: solid none;
+}
+
+main li > * {
     padding: 1rem;
     width: 100%;
     display: flex;
     justify-content: space-between;
-    background: none;
-    font-size: 1.3em;
+    gap: 1rem;
 }
 
-button>div:last-child {
+main li > small {
+    padding-top: 0.5rem;
+}
+
+main button .value {
     color: #01ffc8;
 }
 
-
-button:focus {
-    outline-color: #48cbdd;
-    animation: focusRing 1s linear infinite;
-    outline-style: solid;
-    outline-width: 4px;
-}
-
 footer {
-    border-top: solid 1px;
+    border-top: solid 1px var(--separator-bold);
     padding: 0.8rem 2.5rem;
     display: flex;
     justify-content: flex-end;
@@ -75,24 +150,24 @@ footer {
 }
 
 dialog {
+    --dialog-margin: 0.5rem;
     border: none;
-    box-shadow: rgba(10, 21, 34, 0.75) 0 0 0 100vmin;
     padding: 1rem 2rem;
     font-size: 1.3rem;
-    background-color: #464646;
     border-radius: 4px;
+    min-width: 40vw;
+    text-align: center;
+    color: inherit;
 }
 
-@keyframes focusRing {
-    0% {
-        outline-color: var(--highlight-light);
-    }
+dialog > *:first-child {
+    margin-top: var(--dialog-margin);
+}
 
-    50% {
-        outline-color: var(--highlight-dark);
-    }
+dialog > *:last-child {
+    margin-bottom: var(--dialog-margin);
+}
 
-    100% {
-        outline-color: var(--highlight-light);
-    }
+dialog::backdrop {
+    background-color: rgba(10, 21, 34, 0.75);
 }

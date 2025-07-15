@@ -106,7 +106,7 @@ async function usbHandleEndSession(cmd_block) {
 async function usbRead(size, timeout = -1) {
     var rd = new ArrayBuffer()
 
-    var transfer = await globalThis.usbDev.transferIn(globalThis.usbEpIn.endpointNumber, size)
+    var transfer = await globalThis.usbDev.transferIn(globalThis.usbEpIn, size)
 
     if (transfer.status == 'ok') {
         rd = transfer.data.buffer.transfer()
@@ -120,7 +120,7 @@ async function usbRead(size, timeout = -1) {
 async function usbWrite(data, timeout = -1) {
     var wr = 0
 
-    var transfer = await globalThis.usbDev.transferOut(globalThis.usbEpOut.endpointNumber, data)
+    var transfer = await globalThis.usbDev.transferOut(globalThis.usbEpOut, data)
     wr = transfer.bytesWritten
 
     if (transfer.status == 'ok') {
@@ -522,10 +522,7 @@ async function usbCommandHandler() {
         [USB_CMD_END_EXTRACTED_FS_DUMP,   usbHandleEndExtractedFsDump]
     ])
 
-    // Get device endpoints.
-    if (!await usbGetDeviceEndpoints()) {
-        return
-    }
+    connect_button.querySelector(".value").innerText = globalThis.usbDev.serialNumber;
 
     // Reset NSP info.
     await utilsResetNspInfo()
@@ -597,6 +594,7 @@ async function usbCommandHandler() {
         await globalThis.usbDev.close()
     } catch (e) {
     }
+    connect_button.querySelector(".value").innerText = "Not connected"
 }
 
 async function utilsResetNspInfo(del = false) {
@@ -618,59 +616,53 @@ async function utilsResetNspInfo(del = false) {
 
 }
 
-async function usbGetDeviceEndpoints() {
-    globalThis.usbDev = null
+async function usbSetupDevice(usbDev) {
     var usb_ep_in_lambda = e => e.direction == 'in'
     var usb_ep_out_lambda = e => e.direction == 'out'
-
-    try {
-        // Find a connected USB device with a matching VID/PID pair.
-        globalThis.usbDev = await navigator.usb.requestDevice({ filters: [{ vendorId: USB_DEV_VID, productId: USB_DEV_PID }] });
-    } catch (e) {
-        console.error('Fatal error ocurred while enumerating USB devices.')
-        return false
-    }
 
     // Check if the product and manufacturer strings match the ones used by nxdumptool.
     // TODO: enable product string check whenever we're ready for a release.
     //if (globalThis.usbDev.manufacturer != USB_DEV_MANUFACTURER) or (globalThis.usbDev.product != USB_DEV_PRODUCT):
-    if (globalThis.usbDev.manufacturerName != USB_DEV_MANUFACTURER) {
+    if (usbDev.manufacturerName != USB_DEV_MANUFACTURER) {
         console.error('Invalid manufacturer/product strings!')
-        return false
+        await usbDev.forget();
+        throw new Error();
     }
 
     // Set default device configuration, then get the active configuration descriptor.
-    var cfg = globalThis.usbDev.configuration
+    var cfg = usbDev.configuration
 
     // Get default interface descriptor.
     var intf = cfg.interfaces[0]
 
     // Retrieve endpoints.
-    globalThis.usbEpIn = intf.alternate.endpoints.find(usb_ep_in_lambda);
-    globalThis.usbEpOut = intf.alternate.endpoints.find(usb_ep_out_lambda);
+    const usbEpIn = intf.alternate.endpoints.find(usb_ep_in_lambda);
+    const usbEpOut = intf.alternate.endpoints.find(usb_ep_out_lambda);
 
     if ((!globalThis.usbEpIn) || (!globalThis.usbEpOut)) {
         console.error('Invalid endpoint addresses!')
-        return false
+        await usbDev.forget();
+        throw new Error();
     }
 
+    // Reset device.
+    await usbDev.open()
+    await usbDev.reset()
+    await usbDev.claimInterface(intf.interfaceNumber)
+
     // Save endpoint max packet size and USB version.
-    globalThis.usbEpMaxPacketSize = globalThis.usbEpIn.packetSize
-    globalThis.usbVersion = `${globalThis.usbDev.usbVersionMajor}.${globalThis.usbDev.usbVersionMinor}`
+    globalThis.usbDev = usbDev;
+    globalThis.usbEpIn = usbEpIn.endpointNumber;
+    globalThis.usbEpOut = usbEpOut.endpointNumber;
+    globalThis.usbEpMaxPacketSize = usbEpIn.packetSize
+    globalThis.usbVersion = `${usbDev.usbVersionMajor}.${usbDev.usbVersionMinor}`
 
     console.debug(`Max packet size: ${globalThis.usbEpMaxPacketSize}`)
-    
-    // Reset device.
-    await globalThis.usbDev.open()
-    await globalThis.usbDev.reset()
-    await globalThis.usbDev.claimInterface(intf.interfaceNumber)
 
     console.debug('Successfully retrieved USB endpoints!')
 
     return true
 }
-
-document.getElementById("go").addEventListener("click", usbCommandHandler)
 
 async function dstHandler() {
     globalThis.dstDir = null
@@ -682,10 +674,56 @@ async function dstHandler() {
         return false
     }
 
+    directory_button.querySelector(".value").innerText = globalThis.dstDir.name;
     console.debug('Successfully selected output directory!')
 }
 
-document.getElementById("dst").addEventListener("click", dstHandler)
+
+const connect_button = document.getElementById("src");
+const directory_button = document.getElementById("dst");
+const notify_button = document.getElementById("notify");
+const transfer_dialog = document.getElementById("transfer");
+const browser_dialog = document.getElementById("browser");
+
+
+async function usbRequestDevice() {
+    try {
+        // Find a connected USB device with a matching VID/PID pair.
+        usbDev = await navigator.usb.requestDevice({ filters: [{ vendorId: USB_DEV_VID, productId: USB_DEV_PID }] });
+    } catch (e) {
+        return false
+    }
+
+    await usbSetupDevice(usbDev);
+
+    await usbCommandHandler();
+}
+
+async function usbReconnect(event) {
+    await usbSetupDevice(event.device);
+
+    await usbCommandHandler();
+}
+
+navigator.usb.addEventListener("connect", usbReconnect)
+
+connect_button.addEventListener("click", usbRequestDevice)
+directory_button.addEventListener("click", dstHandler)
+notify_button.addEventListener("click", () => transfer_dialog.showModal())
+
+const fs_supported = window?.showDirectoryPicker;
+const usb_supported = navigator?.usb?.requestDevice;
+
+console.debug(`WebUSB API support: ${usb_supported ? 'Yes' : 'No'}`)
+console.debug(`File System API support: ${fs_supported ? 'Yes' : 'No'}`)
+
+if (Notification.permission == "granted") {}
+
+
+if (!fs_supported || !usb_supported) {
+    browser_dialog.showModal()
+}
+
 
 // Modified https://github.com/lyngklip/structjs
 const rechk = /^([<>])?(([1-9]\d*)?([xcbB?hHiIlLqQefdsp]))*$/

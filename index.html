@@ -8,26 +8,33 @@
 </head>
 
 <body>
-    <h1>Web-NXDT - NXDumpTool (host)</h1>
-    <ul>
-        <li><button id="dst">
-                <div>Destination directory</div>
-                <div>Not selected</div>
-            </button></li>
-        <li>
-            <label for="dst">Requires a browser with File System API (showDirectoryPicker) support.</label>
-        </li>
-        <li><button id="go">
-                <div>Source device</div>
-                <div>Not connected</div>
-            </button></li>
-        <li>
-            <label for="go">Requires a browser with WebUSB API support.</label>
-        </li>
-    </ul>
-    <dialog>
-        <p>Transfering: <span id="name">The Legend of Zelda: Breath of the Wild</span></p>
-        <progress id="bar" value="0" max="0"></progress>
+    <header>Web-NXDT - NXDumpTool (host)</header>
+    <main>
+        <ul>
+            <li><button id="dst">
+                    <div>Destination directory</div>
+                    <div class="value">Not selected</div>
+                </button></li>
+            <li><button id="src">
+                    <div>Source device</div>
+                    <div class="value">Not connected</div>
+                </button></li>
+            <li><button id="notify" aria-describedby="notify-info">
+                    <div>Notifications</div>
+                    <div class="value">Disabled</div>
+                </button></li>
+            <li aria-hidden="true">
+                <small id="notify-info">Notifies when transfers are done or device disconnects.</small>
+            </li>
+        </ul>
+    </main>
+    <dialog id="transfer" closedby="none">
+        <p>Transfering: <span id="name">File name</span></p>
+        <progress id="bar" value="50" max="100"></progress>
+    </dialog>
+    <dialog id="browser" closedby="none">
+        <p>Your browser is not supported!</p>
+        <small>Try a chromium-based browser insted.</small>
     </dialog>
     <footer>
         <div>NXDumpTool by DarkMatterCore</div>
