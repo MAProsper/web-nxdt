@@ -11,6 +11,8 @@
     --separator-color: #ddd;
     --highlight-dark: #2996CE;
     --highlight-light: #72EBF6;
+    --selector-color: #324ff1;
+    --hover-color: #e3e3e3;
     animation: highlight 1s linear infinite;
     font-family: sans;
     color: var(--text-color);
@@ -22,6 +24,8 @@
         --text-color: #f2f2f2;
         --separator-color: #444;
         --background-color: #2d2d2d;
+        --selector-color: #01ffc8;
+        --hover-color: #3c3c3c;
     }
 }
 
@@ -78,7 +82,7 @@ button:disabled * {
 }
 
 button:not([disabled]):hover {
-    background-color: #3c3c3c;
+    background-color: var(--hover-color);
 }
 
 dialog:focus {
@@ -137,7 +141,7 @@ main li > small {
 }
 
 main button .value {
-    color: #01ffc8;
+    color: var(--selector-color);
 }
 
 footer {
