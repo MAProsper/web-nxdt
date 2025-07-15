@@ -8,8 +8,7 @@
 :root {
     --text-color: #2d2d2d;
     --background-color: #f2f2f2;
-    --separator-light: #dcdcdc;
-    --separator-bold: #2c2c2c;
+    --separator-color: #ddd;
     --highlight-dark: #2996CE;
     --highlight-light: #72EBF6;
     animation: highlight 1s linear infinite;
@@ -21,7 +20,7 @@
 @media (prefers-color-scheme: dark) {
     :root {
         --text-color: #f2f2f2;
-        --separator-light: #444;
+        --separator-color: #444;
         --background-color: #2d2d2d;
     }
 }
@@ -41,7 +40,7 @@
 }
 
 :focus {
-    border-radius: 4px;
+    border-radius: 1px;
     outline-style: solid;
     outline-width: 4px;
     outline-color: var(--highlight-color);
@@ -91,11 +90,11 @@ progress {
     height: 0.5rem;
     overflow: hidden;
     border-radius: 1rem;
-    border: 1px solid var(--separator-light);
+    border: 1px solid var(--separator-color);
 }
 
 progress::-webkit-progress-bar {
-    background-color: var(--separator-light);
+    background-color: var(--separator-color);
 }
 
 progress::-webkit-progress-value {
@@ -105,7 +104,7 @@ progress::-webkit-progress-value {
 /* Page rules */
 header {
     margin: 0;
-    border-bottom: solid 1px var(--separator-bold);
+    border-bottom: solid 1px var(--text-color);
     padding: 0.8rem 2.5rem;
     font-weight: normal;
     font-size: 1.8rem;
@@ -121,7 +120,7 @@ main ul {
 
 main li {
     border-top: solid;
-    border-color: var(--separator-light);
+    border-color: var(--separator-color);
     border-width: 1px;
 }
 
@@ -142,7 +141,7 @@ main button .value {
 }
 
 footer {
-    border-top: solid 1px var(--separator-bold);
+    border-top: solid 1px var(--text-color);
     padding: 0.8rem 2.5rem;
     display: flex;
     justify-content: flex-end;
