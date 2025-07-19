@@ -337,9 +337,19 @@ class NxdtSession {
                 cmd_header = await this.getCmdHeader();
                 [cmd_id, cmd_block] = await this.getCommand(cmd_header);
 
-                if (cmd_id != NXDT.COMMAND.SEND_FILE_PROPERTIES) {
-                    await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
-                    throw new NxdtError(`Unexpected command during nspEntry (${cmd_id})!`)
+                switch (cmd_id) {
+                    case NXDT.COMMAND.SEND_FILE_PROPERTIES:
+                        break;
+                    case NXDT.COMMAND.CANCEL_FILE_TRANSFER:
+                        if (cmd_block) {
+                            await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                            throw new NxdtError(`Unexpected command block! ${cmd_id}`)
+                        }
+                        await this.sendStatus(NXDT.STATUS.SUCCESS)
+                        throw new NxdtError("Transfer cancelled")
+                    default:
+                        await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                        throw new NxdtError(`Unexpected command during nspEntry (${cmd_id})!`)
                 }
 
                 const [entryname, entry_size, entry_header] = await this.handleSendFilePropertiesHeader(cmd_block)
@@ -359,9 +369,19 @@ class NxdtSession {
             cmd_header = await this.getCmdHeader();
             [cmd_id, cmd_block] = await this.getCommand(cmd_header);
 
-            if (cmd_id != NXDT.COMMAND.SEND_NSP_HEADER) {
-                await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
-                throw new NxdtError(`Unexpected command during nspHeader! ${cmd_id}`)
+            switch (cmd_id) {
+                case NXDT.COMMAND.SEND_NSP_HEADER:
+                    break;
+                case NXDT.COMMAND.CANCEL_FILE_TRANSFER:
+                    if (cmd_block) {
+                        await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                        throw new NxdtError(`Unexpected command block! ${cmd_id}`)
+                    }
+                    await this.sendStatus(NXDT.STATUS.SUCCESS)
+                    throw new NxdtError("Transfer cancelled")
+                default:
+                    await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                    throw new NxdtError(`Unexpected command during nspEntry (${cmd_id})!`)
             }
 
             if (cmd_block.byteLength != nsp_header_size) {
@@ -372,6 +392,7 @@ class NxdtSession {
             await file.seek(0)
             await file.write(cmd_block)
             offset += nsp_header_size
+            transfer_dialog.querySelector('progress').value += nsp_header_size
 
             await this.sendStatus(NXDT.STATUS.SUCCESS)
         } else {
@@ -421,9 +442,19 @@ class NxdtSession {
             cmd_header = await this.getCmdHeader();
             [cmd_id, cmd_block] = await this.getCommand(cmd_header);
 
-            if (cmd_id != NXDT.COMMAND.SEND_FILE_PROPERTIES) {
-                await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
-                throw new NxdtError(`Unexpected command during fsEntry (${cmd_id})!`)
+            switch (cmd_id) {
+                case NXDT.COMMAND.SEND_FILE_PROPERTIES:
+                    break;
+                case NXDT.COMMAND.CANCEL_FILE_TRANSFER:
+                    if (cmd_block) {
+                        await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                        throw new NxdtError(`Unexpected command block! ${cmd_id}`)
+                    }
+                    await this.sendStatus(NXDT.STATUS.SUCCESS)
+                    throw new NxdtError("Transfer cancelled")
+                default:
+                    await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                    throw new NxdtError(`Unexpected command during nspEntry (${cmd_id})!`)
             }
 
             const [entryname, entry_size, entry_header] = await this.handleSendFilePropertiesHeader(cmd_block)
@@ -446,9 +477,19 @@ class NxdtSession {
         cmd_header = await this.getCmdHeader();
         [cmd_id, cmd_block] = await this.getCommand(cmd_header);
 
-        if (cmd_id != NXDT.COMMAND.END_EXTRACTED_FS_DUMP) {
-            await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
-            throw new NxdtError(`Unexpected command during nspHeader (${cmd_id})!`)
+        switch (cmd_id) {
+            case NXDT.COMMAND.END_EXTRACTED_FS_DUMP:
+                break;
+            case NXDT.COMMAND.CANCEL_FILE_TRANSFER:
+                if (cmd_block) {
+                    await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                    throw new NxdtError(`Unexpected command block! ${cmd_id}`)
+                }
+                await this.sendStatus(NXDT.STATUS.SUCCESS)
+                throw new NxdtError("Transfer cancelled")
+            default:
+                await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                throw new NxdtError(`Unexpected command during nspEntry (${cmd_id})!`)
         }
 
         if (cmd_block.byteLength != 0) {
