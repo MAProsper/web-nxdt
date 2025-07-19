@@ -1,691 +1,561 @@
 const NXDT = {
-    CONSTANT: {
-        DEVICE: {
-            vendorId: 0x057E, productId: 0x3000,
-            manufacturerName: 'DarkMatterCore', productName: 'nxdumptool'
-        },
-        SIZE: {
-            CMD_HEADER: 0x10,
-            START_SESSION_HEADER          : 0x10,
-            SEND_FILE_PROPERTIES_HEADER   : 0x320,
-            START_EXTRACTED_FS_DUMP_HEADER: 0x310,
-            SEND_FILE_PROPERTIES_TRANSFER: 0x800000,
-            SEND_FILE_PROPERTIES_NAME: 0x300,
-        },
-        ABI: {
-            MAJOR: 1,
-            MINOR: 2,
-            MAGIC: 'NXDT'
-        },
-        COMMAND: {
-            START_SESSION          : 0,
-            SEND_FILE_PROPERTIES   : 1,
-            CANCEL_FILE_TRANSFER   : 2,
-            SEND_NSP_HEADER        : 3,
-            END_SESSION            : 4,
-            START_EXTRACTED_FS_DUMP: 5,
-            END_EXTRACTED_FS_DUMP  : 6,
-        },
-        STATUS: {
-            SUCCESS                : 0,
-            INVALID_MAGIC_WORD     : 4,
-            UNSUPPORTED_CMD        : 5,
-            UNSUPPORTED_ABI_VERSION: 6,
-            MALFORMED_CMD          : 7,
-            HOST_IO_ERROR          : 8,
-        }
+    DEVICE: {
+        vendorId: 0x057E, productId: 0x3000,
+        manufacturerName: 'DarkMatterCore', productName: 'nxdumptool'
     },
-    STATE: {
-        USB: {
-            DEVICE: null,
-            ENDPOINT: {
-                IN: null,
-                OUT: null,
-                PACKET_SIZE: 0
-            },
-            VERSION: {
-                MAJOR: 0,
-                MINOR: 0
-            }
-        },
-        NXDT: {
-            VERSION: {
-                MAJOR: 0,
-                MINOR: 0,
-                MICRO: 0,
-                GIT_COMMIT: ''
-            },
-            ABI: {
-                MAJOR: 0,
-                MINOR: 0,
-            }
-        },
-        TRANSFER: {
-            NSP: false,
-            MISSING: 0,
-            SIZE: 0,
-            HEADER_SIZE: 0,
-            HANDLE: null,
-            PARENT: null,
-            DST: null,
-            PATH: ''
-        }
+    SIZE: {
+        CMD_HEADER: 0x10,
+        START_SESSION_HEADER          : 0x10,
+        SEND_FILE_PROPERTIES_HEADER   : 0x320,
+        START_EXTRACTED_FS_DUMP_HEADER: 0x310,
+        SEND_FILE_PROPERTIES_TRANSFER: 0x800000,
+        SEND_FILE_PROPERTIES_NAME: 0x300,
+    },
+    ABI: {
+        MAJOR: 1,
+        MINOR: 2,
+        MAGIC: 'NXDT'
+    },
+    COMMAND: {
+        START_SESSION          : 0,
+        SEND_FILE_PROPERTIES   : 1,
+        CANCEL_FILE_TRANSFER   : 2,
+        SEND_NSP_HEADER        : 3,
+        END_SESSION            : 4,
+        START_EXTRACTED_FS_DUMP: 5,
+        END_EXTRACTED_FS_DUMP  : 6,
+    },
+    STATUS: {
+        SUCCESS                : 0,
+        INVALID_MAGIC_WORD     : 4,
+        UNSUPPORTED_CMD        : 5,
+        UNSUPPORTED_ABI_VERSION: 6,
+        MALFORMED_CMD          : 7,
+        HOST_IO_ERROR          : 8,
     }
 }
 
-async function usbHandleStartSession(cmd_block) {
-    if (cmd_block.byteLength != NXDT.CONSTANT.SIZE.START_SESSION_HEADER) {
-        console.error(`Invalid command block size for command ID ${cmd_id}! (${cmd_block.byteLength})`)
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
+class NxdtError extends Error {}
+
+class NxdtUsb {
+    constructor(usbDev) {
+        return this.setup(usbDev).then(() => this)
     }
 
-    // Parse command block.
-    var abi_version
-    [NXDT.STATE.NXDT.VERSION.MAJOR, NXDT.STATE.NXDT.VERSION.MINOR, NXDT.STATE.NXDT.VERSION.MICRO, abi_version, NXDT.STATE.NXDT.VERSION.GIT_COMMIT] = struct('<BBBB8s').unpack_from(cmd_block, 0)
-
-    // Unpack ABI version.
-    NXDT.STATE.NXDT.ABI.MAJOR  = ((abi_version >> 4) & 0x0F)
-    NXDT.STATE.NXDT.ABI.MINOR = (abi_version & 0x0F)
-
-    // Print client info.
-    console.log(`Client info: ${NXDT.CONSTANT.DEVICE.productName} v${NXDT.STATE.NXDT.VERSION.MAJOR}.${NXDT.STATE.NXDT.VERSION.MINOR}.${NXDT.STATE.NXDT.VERSION.MICRO}, USB ABI v${NXDT.STATE.NXDT.ABI.MAJOR }.${NXDT.STATE.NXDT.ABI.MINOR} (commit ${NXDT.STATE.NXDT.VERSION.GIT_COMMIT}), USB ${globalThis.usbVersion}.`)
-
-    // Check if we support this ABI version.
-    if ((NXDT.STATE.NXDT.ABI.MAJOR  != NXDT.CONSTANT.ABI.MAJOR) || (NXDT.STATE.NXDT.ABI.MINOR != NXDT.CONSTANT.ABI.MINOR)) {
-        console.error('Unsupported ABI version!')
-        await usbSendStatus(NXDT.CONSTANT.STATUS.UNSUPPORTED_ABI_VERSION)
-        return false
-    }
-
-    // Return status code.
-    await usbSendStatus(NXDT.CONSTANT.STATUS.SUCCESS)
-    return true
-}
-
-async function usbHandleEndSession(cmd_block) {
-    console.debug(`Received EndSession (${NXDT.CONSTANT.COMMAND.END_SESSION}) command.`)
-    await usbSendStatus(NXDT.CONSTANT.STATUS.SUCCESS)
-    return false
-}
-
-async function usbRead(size) {
-    var rd = new ArrayBuffer()
-
-    var transfer = await NXDT.STATE.USB.DEVICE.transferIn(NXDT.STATE.USB.ENDPOINT.IN, size)
-
-    if (transfer.status == 'ok') {
-        rd = transfer.data.buffer.transfer()
-    } else {
-        console.error("USB.read (error)")
-    }
-
-    return rd
-}
-
-async function usbWrite(data) {
-    var wr = 0
-
-    var transfer = await NXDT.STATE.USB.DEVICE.transferOut(NXDT.STATE.USB.ENDPOINT.OUT, data)
-    wr = transfer.bytesWritten
-
-    if (transfer.status == 'ok') {
-    } else {
-        console.error("USB.write (error)")
-    }
-
-    return wr
-}
-
-async function usbSendStatus(code) {
-    var status = struct('<4sIH6x').pack(NXDT.CONSTANT.ABI.MAGIC, code, NXDT.STATE.USB.ENDPOINT.PACKET_SIZE)
-    return (await usbWrite(status)) == status.byteLength
-}
-
-function utilsIsValueAlignedToEndpointPacketSize(value) {
-    return (value & (NXDT.STATE.USB.ENDPOINT.PACKET_SIZE - 1)) == 0
-}
-
-async function usbHandleSendFileProperties(cmd_block) {
-    console.debug(`Received SendFileProperties (${NXDT.CONSTANT.COMMAND.SEND_FILE_PROPERTIES}) command.`)
-
-    // Perform sanity checks.
-    if (cmd_block.byteLength != NXDT.CONSTANT.SIZE.SEND_FILE_PROPERTIES_HEADER) {
-        console.error(`Invalid command block size for command ID ${cmd_id}! (${cmd_block.byteLength})`)
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
-    }
-
-    // Parse command block.
-    var [file_size, filename_length, nsp_header_size] = struct('<QII').unpack_from(cmd_block, 0)
-    var filename = struct(`<${filename_length}s`).unpack_from(cmd_block, 16)[0]
-
-    // Print info.
-    console.debug(`File size: ${file_size} | Filename length: ${filename_length} | NSP header size: ${nsp_header_size}.`)
-    console.info(`Receiving file: ${filename}`)
-
-    // Perform sanity checks.
-    if (file_size > BigInt(Number.MAX_SAFE_INTEGER)) {
-        console.error('File size must be smaller than than the max safe integer!')
-        await usbSendStatus(NXDT.CONSTANT.STATUS.HOST_IO_ERROR)
-        return true
-    }
-    file_size = Number(file_size)
-
-    if ((!NXDT.STATE.TRANSFER.NSP) && file_size && (nsp_header_size >= file_size)) {
-        console.error('NSP header size must be smaller than the full NSP size!')
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
-    }
-
-    if (NXDT.STATE.TRANSFER.NSP && nsp_header_size) {
-        console.error('Received non-zero NSP header size during NSP transfer mode!')
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
-    }
-
-    if ((!filename_length) || (filename_length > NXDT.CONSTANT.SIZE.SEND_FILE_PROPERTIES_NAME)) {
-        console.error('Invalid filename length!')
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
-    }
-
-    // Enable NSP transfer mode (if needed).
-    if (!NXDT.STATE.TRANSFER.NSP && file_size && nsp_header_size) {
-        NXDT.STATE.TRANSFER.NSP = true
-        NXDT.STATE.TRANSFER.SIZE = file_size
-        NXDT.STATE.TRANSFER.HEADER_SIZE = nsp_header_size
-        NXDT.STATE.TRANSFER.MISSING = (file_size - nsp_header_size)
-        NXDT.STATE.TRANSFER.PARENT = null
-        NXDT.STATE.TRANSFER.HANDLE = null
-        NXDT.STATE.TRANSFER.PATH = ''
-        console.debug('NSP transfer mode enabled!')
-    }
-
-    // Perform additional sanity checks and get a file object to work with.
-    var file, dir
-    if (!NXDT.STATE.TRANSFER.NSP || (NXDT.STATE.TRANSFER.HANDLE === null)) {
-
-        var dirs = filename.split("/").filter(name => name)
-        var name = dirs.pop()
-
-        // Create full directory tree.
-        var dirname
-        dir = NXDT.STATE.TRANSFER.DST
-        for (dirname of dirs) {
-            try {
-                dir = await dir.getDirectoryHandle(dirname, {create: true})
-            } catch (e) {
-                console.error(`Output filepath points to an existing directory! ("${filename}").`)
-                await usbSendStatus(NXDT.CONSTANT.STATUS.HOST_IO_ERROR)
-                return true
-            }
+    async setup(usbDev) {
+        this.device = usbDev
+        this.version = {
+            major: this.device.usbVersionMajor,
+            minor: this.device.usbVersionMinor
         }
 
-        // Make sure the output filepath doesn't point to an existing directory.
-        var file_handle
+        // Check if the product and manufacturer strings match the ones used by nxdumptool.
+        // TODO: enable product string check whenever we're ready for a release.
+        //if (NXDT.STATE.USB.DEVICE.manufacturer != NXDT.DEVICE.manufacturerName) or (NXDT.STATE.USB.DEVICE.product != USB_DEV_PRODUCT):
+        if (this.device.manufacturerName != NXDT.DEVICE.manufacturerName) {
+            throw new NxdtError('Invalid manufacturer/product strings!');
+        }
+
+        // Set default device configuration, then get the active configuration descriptor.
+        const configuration = this.device.configuration
+
+        // Get default interface descriptor.
+        const intf = configuration.interfaces[0]
+        this.interface = intf.interfaceNumber
+
+        // Retrieve endpoints.
+        const usbEpIn = intf.alternate.endpoints.find(e => e.direction == 'in');
+        const usbEpOut = intf.alternate.endpoints.find(e => e.direction == 'out');
+
+        if ((!usbEpIn) || (!usbEpOut)) {
+            throw new NxdtError('Invalid endpoint addresses!');
+        }
+
+        // Save endpoint max packet size and USB version.
+        this.endpoint = {
+            in: usbEpIn.endpointNumber,
+            out: usbEpOut.endpointNumber,
+        }
+        this.packetSize = usbEpIn.packetSize
+
+        console.debug('Successfully retrieved USB endpoints!')
+    }
+
+    async open() {
+        await this.device.open()
+        await this.device.reset()
+        await this.device.claimInterface(this.interface)
+    }
+
+    async close() {
+        await this.device.releaseInterface(this.interface)
+        await this.device.reset()
+        await this.device.close()
+    }
+
+    isValueAlignedToEndpointPacketSize(value) {
+        return (value & (this.packetSize - 1)) == 0
+    }
+
+    async read(size) {
+        const transfer = await this.device.transferIn(this.endpoint.in, size)
+
+        if (transfer.status != 'ok') {
+            throw new NxdtError("USB.read (error)")
+        }
+
+        return transfer.data.buffer.transfer()
+    }
+
+    async write(data) {
+        const transfer = await this.device.transferOut(this.endpoint.out, data)
+
+        if (transfer.status != 'ok') {
+            throw new NxdtError("USB.write (error)")
+        }
+
+        return transfer.bytesWritten
+    }
+}
+
+async function mkFile(dir, filename) {
+    var dirs = filename.split("/").filter(name => name)
+    var name = dirs.pop()
+
+    // Create full directory tree.
+    var dirname
+    for (dirname of dirs) {
         try {
-            file_handle = await dir.getFileHandle(name, {create: true})
+            dir = await dir.getDirectoryHandle(dirname, {create: true})
         } catch (e) {
-            console.error(`Output filepath points to an existing directory! ("${filename}").`)
-            await usbSendStatus(NXDT.CONSTANT.STATUS.HOST_IO_ERROR)
-            return true
-        }
-
-        // NXDT.STATE.TRANSFER.PARENT = await NXDT.STATE.TRANSFER.DST.getDirectoryHandle(filename, {create: true})
-
-        // Get file object.
-        file = await file_handle.createWritable({mode: "exclusive"})
-
-        if (NXDT.STATE.TRANSFER.NSP) {
-            // Update NSP file object.
-            NXDT.STATE.TRANSFER.HANDLE = file
-            NXDT.STATE.TRANSFER.PARENT = dir
-
-            // Update NSP file path.
-            NXDT.STATE.TRANSFER.PATH = filename
-
-            // Write NSP header padding right away.
-            await file.seek(NXDT.STATE.TRANSFER.HEADER_SIZE)
-            // await file.write(new ArrayBuffer(NXDT.STATE.TRANSFER.HEADER_SIZE))
-        }
-    } else {
-        // Retrieve what we need using global variables.
-        file = NXDT.STATE.TRANSFER.HANDLE
-        filename = NXDT.STATE.TRANSFER.PATH
-        dir = NXDT.STATE.TRANSFER.PARENT
-    }
-
-    // Check if we're dealing with an empty file or with the first SendFileProperties command from a NSP.
-    if ((!file_size) || (NXDT.STATE.TRANSFER.NSP && file_size == NXDT.STATE.TRANSFER.SIZE)) {
-        await usbSendStatus(NXDT.CONSTANT.STATUS.SUCCESS)
-
-        // Close file (if needed).
-        if (!NXDT.STATE.TRANSFER.NSP) {
-            await file.close()
-        }
-
-        // Let the command handler take care of sending the status response for us.
-        return true
-    }
-
-    // Check if we should use the progress bar window.
-    var use_pbar = false
-    var pbar_n, pbar_file_size
-    if (use_pbar) {
-        if ((!NXDT.STATE.TRANSFER.NSP) || NXDT.STATE.TRANSFER.MISSING == (NXDT.STATE.TRANSFER.SIZE - NXDT.STATE.TRANSFER.HEADER_SIZE)) {
-            if (!NXDT.STATE.TRANSFER.NSP) {
-                // Set current progress to zero and the maximum value to the provided file size.
-                pbar_n = 0
-                pbar_file_size = file_size
-            } else {
-                // Set current progress to the NSP header size and the maximum value to the provided NSP size.
-                pbar_n = NXDT.STATE.TRANSFER.HEADER_SIZE
-                pbar_file_size = NXDT.STATE.TRANSFER.SIZE
-            }
-
-            // Display progress bar window.
-            console.info("progressBarWindow.start", pbar_n, pbar_file_size)
-        } else {
-            // Set current prefix (holds the filename for the current NSP file entry).
-            console.info("progressBarWindow.set_prefix")
+            console.error(`Failed to create directory component! ("${dirname}").`)
+            throw new NxdtError()
         }
     }
 
-    async function cancelTransfer() {
-        // Cancel file transfer.
-        if (NXDT.STATE.TRANSFER.NSP) {
-            await utilsResetNspInfo(true)
-        } else {
-            await file.close()
-            await dir.removeEntry(filename.replace(/.*\//, ''), {recursive: true})
-        }
-
-        if (use_pbar && (globalThis.progressBarWindow !== null)) {
-            console.info("progressBarWindow.end")
-        }
+    // Make sure the output filepath doesn't point to an existing directory.
+    var file
+    try {
+        file = await dir.getFileHandle(name, {create: true})
+    } catch (e) {
+        console.error(`Failed to create file component! ("${name}").`)
+        throw new NxdtError()
     }
 
-    // Send status response before entering the data transfer stage.
-    await usbSendStatus(NXDT.CONSTANT.STATUS.SUCCESS)
-
-    // Start data transfer stage.
-    console.debug(`Data transfer started. Writing to: "${filename}".`)
-
-    // Start transfer process.
-    var start_time = Date.now()
-
-    var offset = 0
-    while (offset < file_size) {
-
-        // Update block size (if needed).
-        var diff = file_size - offset
-        var blksize = Math.min(NXDT.CONSTANT.SIZE.SEND_FILE_PROPERTIES_TRANSFER, diff)
-
-        // Set block size and handle Zero-Length Termination packet (if needed).
-        var rd_size = blksize
-        if (((offset + blksize) >= file_size) && utilsIsValueAlignedToEndpointPacketSize(blksize)) {
-            rd_size += 1
-        }
-
-        // Read current chunk.
-        var chunk = await usbRead(rd_size)
-        if (!chunk) {
-            console.error(`Failed to read ${rd_size}-byte long data chunk!`)
-
-            // Cancel file transfer.
-            await cancelTransfer()
-
-            // Returning None will make the command handler exit right away.
-            return false
-        }
-
-        var chunk_size = chunk.byteLength
-
-        // Check if we're dealing with a CancelFileTransfer command.
-        if (chunk_size == NXDT.CONSTANT.SIZE.CMD_HEADER) {
-            var [magic, cmd_id, cmd_block_size, _] = struct('<4sIII').unpack_from(chunk, 0)
-            if ((magic == NXDT.CONSTANT.ABI.MAGIC) && (cmd_id == NXDT.CONSTANT.COMMAND.CANCEL_FILE_TRANSFER) && (cmd_block_size == 0)) {
-
-                await usbSendStatus(NXDT.CONSTANT.STATUS.SUCCESS)
-
-                // Cancel file transfer.
-                await cancelTransfer()
-
-                console.debug(`Received CancelFileTransfer (${NXDT.CONSTANT.COMMAND.CANCEL_FILE_TRANSFER}) command.`)
-                console.warn('Transfer cancelled.')
-                
-                // Let the command handler take care of sending the status response for us.
-                return true
-            }
-        }
-
-        // Write current chunk.
-        await file.write(chunk)
-        // await file.flush()
-
-        // Update current offset.
-        offset = (offset + chunk_size)
-
-        // Update remaining NSP data size.
-        if (NXDT.STATE.TRANSFER.NSP) {
-            NXDT.STATE.TRANSFER.MISSING -= chunk_size
-        }
-
-        // Update progress bar window (if needed).
-        if (use_pbar) {
-            console.info("progressBarWindow.update", chunk_size)
-        }
-    }
-
-    elapsed_time = Date.now() - start_time
-    console.debug(`File transfer successfully completed in ${elapsed_time}s!`)
-
-    await usbSendStatus(NXDT.CONSTANT.STATUS.SUCCESS)
-
-    // Close file handle (if needed).
-    if (!NXDT.STATE.TRANSFER.NSP) {
-        await file.close()
-    }
-
-    // Hide progress bar window (if needed).
-    if (use_pbar && ((!NXDT.STATE.TRANSFER.NSP) || (!NXDT.STATE.TRANSFER.MISSING))) {
-        console.info("progressBarWindow.end")
-    }
-
-    return true
+    return await file.createWritable({mode: "exclusive"})
 }
 
-async function usbHandleCancelFileTransfer(cmd_block) {
-    console.debug(`Received CancelFileTransfer (${NXDT.CONSTANT.COMMAND.CANCEL_FILE_TRANSFER}) command.`)
-
-    // Perform sanity checks.
-    if (cmd_block.byteLength) {
-        console.error(`Invalid command block size for command ID ${cmd_id}! (${cmd_block.byteLength})`)
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
+class NxdtSession {
+    constructor(dir, usb) {
+        return this.setup(dir, usb).then(() => this)
     }
 
-    if (NXDT.STATE.TRANSFER.NSP) {
-        if ((NXDT.STATE.TRANSFER.SIZE > USB_TRANSFER_THRESHOLD) && (globalThis.progressBarWindow !== null)) {
-            console.info("progressBarWindow.end")
+    async setup(dir, usb) {
+        this.dir = dir
+        this.usb = usb
+        await this.handleSession()
+    }
+
+    async sendStatus(code) {
+        var status = struct('<4sIH6x').pack(NXDT.ABI.MAGIC, code, this.usb.packetSize)
+        var wr = await this.usb.write(status)
+
+        if (wr != status.byteLength) {
+            throw new NxdtError("Failed to send status code!")
         }
-
-        await utilsResetNspInfo(true)
-
-        console.warn('Transfer cancelled.')
-        await usbSendStatus(NXDT.CONSTANT.STATUS.SUCCESS)
-        return true
-    } else {
-        console.error('Unexpected transfer cancellation.')
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
-    }
-}
-
-async function usbHandleSendNspHeader(cmd_block) {
-    console.debug(`Received SendNspHeader (${NXDT.CONSTANT.COMMAND.SEND_NSP_HEADER}) command.`)
-
-    // Perform sanity checks.
-    if (!cmd_block.byteLength) {
-        console.error(`Invalid command block size for command ID ${cmd_id}! (${cmd_block.byteLength})`)
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
     }
 
-    var nsp_header_size = cmd_block.byteLength
+    async getCmdHeader() {
+        const cmd_header = await this.usb.read(NXDT.SIZE.CMD_HEADER)
 
-    // Validity checks.
-    if (!NXDT.STATE.TRANSFER.NSP) {
-        console.error('Received NSP header out of NSP transfer mode!')
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
-    }
-
-    if (NXDT.STATE.TRANSFER.MISSING) {
-        console.error(`Received NSP header before receiving all NSP data! (missing ${NXDT.STATE.TRANSFER.MISSING} byte[s]).`)
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
-    }
-
-    if (nsp_header_size != NXDT.STATE.TRANSFER.HEADER_SIZE) {
-        console.error(`NSP header size mismatch! (${nsp_header_size} != ${NXDT.STATE.TRANSFER.HEADER_SIZE}).`)
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
-    }
-
-    // Write NSP header.
-    await NXDT.STATE.TRANSFER.HANDLE.seek(0)
-    await NXDT.STATE.TRANSFER.HANDLE.write(cmd_block)
-
-    console.debug(`Successfully wrote ${nsp_header_size}-byte long NSP header to "${NXDT.STATE.TRANSFER.PATH}".`)
-
-    await usbSendStatus(NXDT.CONSTANT.STATUS.SUCCESS)
-
-    // Disable NSP transfer mode.
-    await utilsResetNspInfo()
-
-    return true
-}
-
-async function usbHandleStartExtractedFsDump(cmd_block) {
-    console.debug(`Received StartExtractedFsDump (${NXDT.CONSTANT.COMMAND.START_EXTRACTED_FS_DUMP}) command.`)
-
-    // Perform sanity checks.
-    if (cmd_block.byteLength != NXDT.CONSTANT.SIZE.START_EXTRACTED_FS_DUMP_HEADER) {
-        console.error(`Invalid command block size for command ID ${cmd_id}! (${cmd_block.byteLength})`)
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
-    }
-
-    if (NXDT.STATE.TRANSFER.NSP) {
-        console.error('StartExtractedFsDump received mid NSP transfer.')
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
-    }
-
-    // Parse command block.
-    var [extracted_fs_size, extracted_fs_root_path] = struct(`<Q${NXDT.CONSTANT.SIZE.SEND_FILE_PROPERTIES_NAME}s`).unpack_from(cmd_block, 0)
-
-    // Perform sanity checks.
-    if (extracted_fs_size > BigInt(Number.MAX_SAFE_INTEGER)) {
-        console.error('File system size must be smaller than than the max safe integer!')
-        await usbSendStatus(NXDT.CONSTANT.STATUS.HOST_IO_ERROR)
-        return true
-    }
-    extracted_fs_size = Number(extracted_fs_size)
-
-    console.info(`Starting extracted FS dump (size ${extracted_fs_size}, output relative path "${extracted_fs_root_path}").`)
-
-    // Return status code.
-    await usbSendStatus(NXDT.CONSTANT.STATUS.SUCCESS)
-    return true
-}
-
-async function usbHandleEndExtractedFsDump(cmd_block) {
-    console.debug(`Received EndExtractedFsDump (${NXDT.CONSTANT.SIZE.END_EXTRACTED_FS_DUMP_HEADER}) command.`)
-
-    // Perform sanity checks.
-    if (cmd_block.byteLength) {
-        console.error(`Invalid command block size for command ID ${cmd_id}! (${cmd_block.byteLength})`)
-        await usbSendStatus(NXDT.CONSTANT.STATUS.MALFORMED_CMD)
-        return true
-    }
-
-    console.info('Finished extracted FS dump.')
-    await usbSendStatus(NXDT.CONSTANT.STATUS.SUCCESS)
-    return true
-}
-
-async function usbCommandHandler() {
-    var cmd_dict = new Map([
-        [NXDT.CONSTANT.COMMAND.START_SESSION,           usbHandleStartSession],
-        [NXDT.CONSTANT.COMMAND.SEND_FILE_PROPERTIES,    usbHandleSendFileProperties],
-        [NXDT.CONSTANT.COMMAND.CANCEL_FILE_TRANSFER,    usbHandleCancelFileTransfer],
-        [NXDT.CONSTANT.COMMAND.SEND_NSP_HEADER,         usbHandleSendNspHeader],
-        [NXDT.CONSTANT.COMMAND.END_SESSION,             usbHandleEndSession],
-        [NXDT.CONSTANT.COMMAND.START_EXTRACTED_FS_DUMP, usbHandleStartExtractedFsDump],
-        [NXDT.CONSTANT.SIZE.END_EXTRACTED_FS_DUMP_HEADER,   usbHandleEndExtractedFsDump]
-    ])
-
-    connect_button.querySelector(".value").innerText = `${NXDT.STATE.USB.DEVICE.productName} (${NXDT.STATE.USB.DEVICE.serialNumber})`;
-
-    // Reset NSP info.
-    await utilsResetNspInfo()
-
-    while (true) {
-        // Read command header.
-        try {
-            var cmd_header = await usbRead(NXDT.CONSTANT.SIZE.CMD_HEADER)
-        } catch (e) {
-            console.error(`Failed to read ${NXDT.CONSTANT.SIZE.CMD_HEADER}-byte long command header!`)
-            break
-        }
-        if (!cmd_header || cmd_header.byteLength != NXDT.CONSTANT.SIZE.CMD_HEADER) {
-            console.error(`Failed to read ${NXDT.CONSTANT.SIZE.CMD_HEADER}-byte long command header!`)
-            break
+        if (!cmd_header || cmd_header.byteLength != NXDT.SIZE.CMD_HEADER) {
+            console.error(`Failed to read ${NXDT.SIZE.CMD_HEADER}-byte long command header!`)
+            throw new NxdtError()
         }
 
         console.debug('Received command header data.')
 
+        return cmd_header
+    }
+
+    async getCmdBlock(cmd_block_size) {
+        // Handle Zero-Length Termination packet (if needed).
+        const rd_size = this.usb.isValueAlignedToEndpointPacketSize(cmd_block_size) ? cmd_block_size + 1 : cmd_block_size
+
+        const cmd_block = await this.usb.read(rd_size)
+        if (!cmd_block || cmd_block.byteLength != cmd_block_size) {
+            console.error(`Failed to read ${cmd_block_size}-byte long command block for command ID ${cmd_id}!`)
+            throw NxdtError()
+        }
+
+        console.debug('Received command block data.')
+
+        return cmd_block
+    }
+
+    async getCommand(header) {
         // Parse command header.
-        var [magic, cmd_id, cmd_block_size, _] = struct("<4sIII").unpack_from(cmd_header, 0)
+        const [magic, cmd_id, cmd_block_size, _] = struct("<4sIII").unpack_from(header, 0)
 
         // Read command block right away (if needed).
         // nxdumptool expects us to read it right after sending the command header.
-        cmd_block = new ArrayBuffer()
-        if (cmd_block_size) {
-            // Handle Zero-Length Termination packet (if needed).
-            if (utilsIsValueAlignedToEndpointPacketSize(cmd_block_size)) {
-                rd_size = (cmd_block_size + 1)
-            } else {
-                rd_size = cmd_block_size
+        const cmd_block = cmd_block_size ? await this.getCmdBlock(cmd_block_size) : new ArrayBuffer()
+
+        // Verify magic word.
+        if (magic != NXDT.ABI.MAGIC) {
+            await this.sendStatus(NXDT.STATUS.INVALID_MAGIC_WORD)
+            throw new NxdtError('Received command header with invalid magic word!')
+        }
+
+        // Verify command handler.
+        if (!Object.values(NXDT.COMMAND).includes(cmd_id)) {
+            await this.sendStatus(NXDT.STATUS.UNSUPPORTED_CMD)
+            throw new NxdtError(`Received command header with unsupported ID ${cmd_id} (not implemented)`)
+        }
+
+        return [cmd_id, cmd_block]
+    }
+
+    async handleSendFilePropertiesHeader(cmd_block) {
+        // Perform sanity checks.
+        if (cmd_block.byteLength != NXDT.SIZE.SEND_FILE_PROPERTIES_HEADER) {
+            console.error(`Invalid command block size (${cmd_block.byteLength} insted of ${NXDT.SIZE.SEND_FILE_PROPERTIES_HEADER})`)
+            await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+            return
+        }
+
+        // Parse command block.
+        const [raw_file_size, filename_length, nsp_header_size] = struct('<QII').unpack_from(cmd_block, 0)
+        const filename = struct(`<${filename_length}s`).unpack_from(cmd_block, 16)[0]
+        const file_size = Number(raw_file_size)
+
+        // Print info.
+        console.debug(`File size: ${raw_file_size} | Filename length: ${filename_length} | NSP header size: ${nsp_header_size}.`)
+        console.info(`Receiving file: ${filename}`)
+
+        // Perform sanity checks.
+        if (raw_file_size > BigInt(Number.MAX_SAFE_INTEGER)) {
+            console.error('File size must be smaller than than the max safe integer!')
+            await this.sendStatus(NXDT.STATUS.HOST_IO_ERROR)
+            return
+        }
+
+        if (nsp_header_size >= file_size) {
+            console.error('NSP header size must be smaller than the full NSP size!')
+            await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+            return
+        }
+
+        if ((!filename_length) || (filename_length > NXDT.SIZE.SEND_FILE_PROPERTIES_NAME)) {
+            console.error('Invalid filename length!')
+            await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+            return
+        }
+
+        await this.sendStatus(NXDT.STATUS.SUCCESS)
+
+        return [filename, file_size, nsp_header_size]
+    }
+
+    async handleSendFilePropertiesBlock(file, file_size) {
+        var offset = 0
+        while (offset < file_size) {
+
+            // Update block size (if needed).
+            var diff = file_size - offset
+            var blksize = Math.min(NXDT.SIZE.SEND_FILE_PROPERTIES_TRANSFER, diff)
+
+            // Set block size and handle Zero-Length Termination packet (if needed).
+            var rd_size = blksize
+            if (((offset + blksize) >= file_size) && this.usb.isValueAlignedToEndpointPacketSize(blksize)) {
+                rd_size += 1
             }
 
-            cmd_block = await usbRead(rd_size)
-            if (!cmd_block || cmd_block.byteLength != cmd_block_size) {
-                console.error(`Failed to read ${cmd_block_size}-byte long command block for command ID ${cmd_id}!`)
+            // Read current chunk.
+            var chunk = await this.usb.read(rd_size)
+            if (!chunk) {
+                throw new NxdtError(`Failed to read ${rd_size}-byte long data chunk!`);
+            }
+
+            // Check if we're dealing with a CancelFileTransfer command.
+            if (chunk.byteLength == NXDT.SIZE.CMD_HEADER) {
+                var cmd_id, cmd_block
+                try {
+                    [cmd_id, cmd_block] = await this.getCommand(chunk)
+                } catch (e) {}
+                if (cmd_block) {
+                    if (cmd_id != NXDT.COMMAND.CANCEL_FILE_TRANSFER || cmd_block.byteLength != 0) {
+                        await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                        throw new NxdtError(`Unexpected command during sendFileBlock (${cmd_id})!`)
+                    }
+                    await this.sendStatus(NXDT.STATUS.SUCCESS)
+                    throw new NxdtError("Transfer cancelled")
+                }
+            }
+
+            // Write current chunk.
+            await file.write(chunk)
+
+            // Update current offset.
+            offset += chunk.byteLength
+        }
+
+        await this.sendStatus(NXDT.STATUS.SUCCESS)
+    }
+
+    async mkFile(filename) {
+        var file
+        try {
+            file = await mkFile(this.dir, filename)
+        } catch (e) {
+            await this.sendStatus(NXDT.STATUS.HOST_IO_ERROR)
+            return
+        }
+        return file
+    }
+
+    async handleSendFileProperties(cmd_block) {
+        console.debug(`Received SendFileProperties (${NXDT.COMMAND.SEND_FILE_PROPERTIES}) command.`)
+
+        const [filename, file_size, nsp_header_size] = await this.handleSendFilePropertiesHeader(cmd_block)
+
+        // Get file object.
+        const file = await this.mkFile(filename)
+
+        if (nsp_header_size) {
+            var cmd_id, cmd_header
+
+            // Write NSP header padding right away.
+            await file.seek(nsp_header_size)
+
+            // NSP entrys
+            var offset = 0
+            while (offset < (file_size - nsp_header_size)) {
+                cmd_header = await this.getCmdHeader();
+                [cmd_id, cmd_block] = await this.getCommand(cmd_header);
+
+                if (cmd_id != NXDT.COMMAND.SEND_FILE_PROPERTIES) {
+                    await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                    throw new NxdtError(`Unexpected command during nspEntry (${cmd_id})!`)
+                }
+
+                const [entryname, entry_size, entry_header] = await this.handleSendFilePropertiesHeader(cmd_block)
+                console.debug(`Reciving NSP entry ${entryname}`)
+
+                if (entry_header) {
+                    console.error('NSP entry can not be a NSP file!')
+                    await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                    throw new NxdtError(`Unexpected fileType during nspEntry (${cmd_id})!`)
+                }
+
+                await this.handleSendFilePropertiesBlock(file, entry_size)
+                offset += entry_size
+            }
+
+            // NSP header
+            cmd_header = await this.getCmdHeader();
+            [cmd_id, cmd_block] = await this.getCommand(cmd_header);
+
+            if (cmd_id != NXDT.COMMAND.SEND_NSP_HEADER) {
+                await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                throw new NxdtError(`Unexpected command during nspHeader! ${cmd_id}`)
+            }
+
+            if (cmd_block.byteLength != nsp_header_size) {
+                await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                throw new NxdtError(`NSP header size mismatch! (${nsp_header_size} != ${cmd_block.byteLength}).`)
+            }
+
+            await file.seek(0)
+            await file.write(cmd_block)
+            offset += nsp_header_size
+
+            await this.sendStatus(NXDT.STATUS.SUCCESS)
+        } else {
+            await this.handleSendFilePropertiesBlock(file, file_size)
+        }
+
+        await file.close()
+    }
+
+    async handleStartExtractedFsDump(cmd_block) {
+        console.debug(`Received StartExtractedFsDump (${NXDT.COMMAND.START_EXTRACTED_FS_DUMP}) command.`)
+
+        // Perform sanity checks.
+        if (cmd_block.byteLength != NXDT.SIZE.START_EXTRACTED_FS_DUMP_HEADER) {
+            console.error(`Invalid command block size (${cmd_block.byteLength} insted of ${NXDT.SIZE.START_EXTRACTED_FS_DUMP_HEADER})`)
+            await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+            return
+        }
+
+        // Parse command block.
+        var [extracted_fs_size, extracted_fs_root_path] = struct(`<Q${NXDT.SIZE.SEND_FILE_PROPERTIES_NAME}s`).unpack_from(cmd_block, 0)
+
+        // Perform sanity checks.
+        if (extracted_fs_size > BigInt(Number.MAX_SAFE_INTEGER)) {
+            console.error('File system size must be smaller than than the max safe integer!')
+            await this.sendStatus(NXDT.STATUS.HOST_IO_ERROR)
+            return
+        }
+        extracted_fs_size = Number(extracted_fs_size)
+
+        console.info(`Starting extracted FS dump (size ${extracted_fs_size}, output relative path "${extracted_fs_root_path}").`)
+
+        // Return status code.
+        await this.sendStatus(NXDT.STATUS.SUCCESS)
+
+        var cmd_id, cmd_header
+
+        // Transfer file system
+        var offset = 0
+        while (offset < extracted_fs_size) {
+            cmd_header = await this.getCmdHeader();
+            [cmd_id, cmd_block] = await this.getCommand(cmd_header);
+
+            if (cmd_id != NXDT.COMMAND.SEND_FILE_PROPERTIES) {
+                await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                throw new NxdtError(`Unexpected command during fsEntry (${cmd_id})!`)
+            }
+
+            const [entryname, entry_size, entry_header] = await this.handleSendFilePropertiesHeader(cmd_block)
+            console.debug(`Reciving FS entry ${entryname}`)
+
+            if (entry_header) {
+                console.error('FS entry can not be a NSP file!')
+                await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                throw new NxdtError('Unexpected fileType during fsEntry!')
+            }
+
+            const file = await this.mkFile(entryname)
+            await this.handleSendFilePropertiesBlock(file, entry_size)
+            await file.close()
+
+            offset += entry_size
+        }
+
+        // FS end
+        cmd_header = await this.getCmdHeader();
+        [cmd_id, cmd_block] = await this.getCommand(cmd_header);
+
+        if (cmd_id != NXDT.COMMAND.END_EXTRACTED_FS_DUMP) {
+            await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+            throw new NxdtError(`Unexpected command during nspHeader (${cmd_id})!`)
+        }
+
+        if (cmd_block.byteLength != 0) {
+            await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+            throw new NxdtError(`NSP header size mismatch! (${0} != ${cmd_block.byteLength}).`)
+        }
+
+        await this.sendStatus(NXDT.STATUS.SUCCESS)
+    }
+
+    async handleStartSession(cmd_block) {
+        console.debug(`Received StartSession (${NXDT.COMMAND.START_SESSION}) command.`)
+
+        if (cmd_block.byteLength != NXDT.SIZE.START_SESSION_HEADER) {
+            console.error(`Invalid command block size (${cmd_block.byteLength} insted of ${NXDT.SIZE.START_SESSION_HEADER})`)
+            await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+            return
+        }
+
+        // Parse command block.
+        const [version_major, version_minor, version_micro, abi_version, version_commit] = struct('<BBBB8s').unpack_from(cmd_block, 0)
+        const [abi_major, abi_minor] = [((abi_version >> 4) & 0x0F), (abi_version & 0x0F)]
+
+        this.client = {
+            version: {
+                major: version_major,
+                minor: version_minor,
+                micro: version_micro,
+                commit: version_commit
+            },
+            abi: {
+                major: abi_major,
+                minor: abi_minor
+            }
+        }
+
+        // Print client info.
+        console.log(`Client info: ${this.usb.productName} v${this.client.version.major}.${this.client.version.minor}.${this.client.version.micro}, USB ABI v${this.client.abi.major}.${this.client.abi.minor} (commit ${this.client.version.commit}), USB ${this.usb.version.major}.${this.usb.version.minor}`)
+
+        // Check if we support this ABI version.
+        if ((this.client.abi.major  != NXDT.ABI.MAJOR) || (this.client.abi.minor != NXDT.ABI.MINOR)) {
+            console.error(`Unsupported ABI version (${this.client.abi.major}.${this.client.abi.minor} insted of ${NXDT.ABI.MAJOR}.${NXDT.ABI.MINOR})!`)
+            await this.sendStatus(NXDT.STATUS.UNSUPPORTED_ABI_VERSION)
+            throw new NxdtError()
+        }
+
+        // Return status code.
+        await this.sendStatus(NXDT.STATUS.SUCCESS)
+    }
+
+    async handleSession() {
+        var cmd_id, cmd_header, cmd_block
+
+        cmd_header = await this.getCmdHeader();
+        [cmd_id, cmd_block] = await this.getCommand(cmd_header);
+
+        if (cmd_id != NXDT.COMMAND.START_SESSION) {
+            await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+            throw new NxdtError(`Unexpected command during nspHeader (${cmd_id})!`)
+        }
+
+        await this.handleStartSession(cmd_block)
+
+        while (cmd_id != NXDT.COMMAND.END_SESSION) {
+            try {
+                cmd_header = await this.getCmdHeader()
+            } catch (e) {
                 break
             }
 
-            console.debug('Received command block data.')
+            const [cmd_id, cmd_block] = await this.getCommand(cmd_header)
+
+            switch (cmd_id) {
+                case NXDT.COMMAND.SEND_FILE_PROPERTIES:
+                    await this.handleSendFileProperties(cmd_block)
+                    break;
+                case NXDT.COMMAND.START_EXTRACTED_FS_DUMP:
+                    await this.handleStartExtractedFsDump(cmd_block)
+                    break;
+            }
         }
 
-        // Verify magic word.
-        if (magic != NXDT.CONSTANT.ABI.MAGIC) {
-            console.error('Received command header with invalid magic word!')
-            await usbSendStatus(NXDT.CONSTANT.STATUS.INVALID_MAGIC_WORD)
-            continue
-        }
+        await this.handleEndSession(cmd_block)
 
-        // Get command handler function.
-        var cmd_func = cmd_dict.get(cmd_id)
-
-        if (!cmd_func) {
-            console.error(`Received command header with unsupported ID ${cmd_id}`)
-            await usbSendStatus(NXDT.CONSTANT.STATUS.UNSUPPORTED_CMD)
-            continue
-        }
-
-        // Run command handler function.
-        // Send status response afterwards. Bail out if requested.
-        var status = await cmd_func(cmd_block)
-        if (!status) {
-            break
-        }
+        console.info('Stopping server.')
     }
-
-    console.info('Stopping server.')
-    try {
-        await NXDT.STATE.USB.DEVICE.close()
-    } catch (e) {
-    }
-    NXDT.STATE.USB.DEVICE = null
-    connect_button.querySelector(".value").innerText = "Not connected"
-}
-
-async function utilsResetNspInfo(del = false) {
-    if (NXDT.STATE.TRANSFER.HANDLE) {
-        await NXDT.STATE.TRANSFER.HANDLE.close()
-        if (del) {
-            await NXDT.STATE.TRANSFER.PARENT.removeEntry(NXDT.STATE.TRANSFER.PATH.replace(/.*\//, ''), {recursive: true})
-        }
-    }
-
-    // Reset NSP transfer mode info.
-    NXDT.STATE.TRANSFER.NSP = false
-    NXDT.STATE.TRANSFER.SIZE = 0
-    NXDT.STATE.TRANSFER.HEADER_SIZE = 0
-    NXDT.STATE.TRANSFER.MISSING = 0
-    NXDT.STATE.TRANSFER.HANDLE = null
-    NXDT.STATE.TRANSFER.PARENT = null
-    NXDT.STATE.TRANSFER.PATH = ''
-
-}
-
-async function usbSetupDevice(usbDev) {
-    var usb_ep_in_lambda = e => e.direction == 'in'
-    var usb_ep_out_lambda = e => e.direction == 'out'
-
-    // Check if the product and manufacturer strings match the ones used by nxdumptool.
-    // TODO: enable product string check whenever we're ready for a release.
-    //if (NXDT.STATE.USB.DEVICE.manufacturer != NXDT.CONSTANT.DEVICE.manufacturerName) or (NXDT.STATE.USB.DEVICE.product != USB_DEV_PRODUCT):
-    if (usbDev.manufacturerName != NXDT.CONSTANT.DEVICE.manufacturerName) {
-        console.error('Invalid manufacturer/product strings!')
-        await usbDev.forget();
-        throw new Error();
-    }
-
-    // Set default device configuration, then get the active configuration descriptor.
-    var cfg = usbDev.configuration
-
-    // Get default interface descriptor.
-    var intf = cfg.interfaces[0]
-
-    // Retrieve endpoints.
-    const usbEpIn = intf.alternate.endpoints.find(usb_ep_in_lambda);
-    const usbEpOut = intf.alternate.endpoints.find(usb_ep_out_lambda);
-
-    if ((!usbEpIn) || (!usbEpOut)) {
-        console.error('Invalid endpoint addresses!')
-        await usbDev.forget();
-        throw new Error();
-    }
-
-    // Reset device.
-    await usbDev.open()
-    await usbDev.reset()
-    await usbDev.claimInterface(intf.interfaceNumber)
-
-    // Save endpoint max packet size and USB version.
-    NXDT.STATE.USB.DEVICE = usbDev;
-    NXDT.STATE.USB.ENDPOINT.IN = usbEpIn.endpointNumber;
-    NXDT.STATE.USB.ENDPOINT.OUT = usbEpOut.endpointNumber;
-    NXDT.STATE.USB.ENDPOINT.PACKET_SIZE = usbEpIn.packetSize
-    NXDT.STATE.USB.VERSION.MAJOR = usbDev.usbVersionMajor
-    NXDT.STATE.USB.VERSION.MINOR = usbDev.usbVersionMinor
-
-    console.debug(`Max packet size: ${NXDT.STATE.USB.ENDPOINT.PACKET_SIZE}`)
-
-    console.debug('Successfully retrieved USB endpoints!')
-
-    return true
 }
 
 async function dstHandler() {
-    NXDT.STATE.TRANSFER.DST = null
-
     try {
-        NXDT.STATE.TRANSFER.DST = await window.showDirectoryPicker({mode: "readwrite"})
+        globalThis.directory = await window.showDirectoryPicker({mode: "readwrite"})
     } catch (e) {
         console.error('Fatal error ocurred while selecting output directory.')
-        return false
+        return
     }
 
-    directory_button.querySelector(".value").innerText = NXDT.STATE.TRANSFER.DST.name;
+    directory_button.querySelector(".value").innerText = globalThis.directory.name;
     console.debug('Successfully selected output directory!')
 }
 
+async function start() {
+    try {
+        await globalThis.usb.open()
+    } catch (e) {
+        await globalThis.usb.device.forget()
+    }
+
+    try {
+        await new NxdtSession(globalThis.directory, globalThis.usb)
+    } catch (e) {
+        await globalThis.usb.close()
+        throw e
+    }
+
+    await globalThis.usb.close()
+}
 
 const connect_button = document.getElementById("src");
 const directory_button = document.getElementById("dst");
@@ -693,40 +563,41 @@ const notify_button = document.getElementById("notify");
 const transfer_dialog = document.getElementById("transfer");
 const browser_dialog = document.getElementById("browser");
 
-
 async function usbRequestDevice() {
     try {
         // Find a connected USB device with a matching VID/PID pair.
-        usbDev = await navigator.usb.requestDevice({ filters: [{ vendorId: NXDT.CONSTANT.DEVICE.vendorId, productId: NXDT.CONSTANT.DEVICE.productId }] });
+        usbDev = await navigator.usb.requestDevice({ filters: [{ vendorId: NXDT.DEVICE.vendorId, productId: NXDT.DEVICE.productId }] });
     } catch (e) {
-        return false
+        return
     }
 
-    await usbSetupDevice(usbDev);
+    globalThis.usb = await new NxdtUsb(usbDev);
 
-    await usbCommandHandler();
+    await start();
 }
 
 async function usbReconnect(event) {
-    if (NXDT.STATE.USB.DEVICE) return;
-    await usbSetupDevice(event.device);
+    if (globalThis.usb) return;
 
-    await usbCommandHandler();
+    globalThis.usb = await new NxdtUsb(event.device);
+
+    await start();
 }
 
 async function usbEnumerate() {
     var dev
     for (dev of (await navigator.usb.getDevices())) {
         try {
-            await usbSetupDevice(dev);
+            globalThis.usb = await new NxdtUsb(usbDev);
         } catch (e) {
             continue
         }
         break
     }
-    if (!NXDT.STATE.USB.DEVICE) return;
-    await usbCommandHandler();
-    
+
+    if (!globalThis.usb) return;
+
+    await start();
 }
 
 window.addEventListener("load", usbEnumerate)
@@ -826,15 +697,3 @@ function struct(format) {
     return Object.freeze({
         unpack, pack, unpack_from, pack_into, iter_unpack, format, size})
 }
-/*
-const pack = (format, ...values) => struct(format).pack(...values)
-const unpack = (format, buffer) => struct(format).unpack(buffer)
-const pack_into = (format, arrb, offs, ...values) =>
-    struct(format).pack_into(arrb, offs, ...values)
-const unpack_from = (format, arrb, offset) =>
-    struct(format).unpack_from(arrb, offset)
-const iter_unpack = (format, arrb) => struct(format).iter_unpack(arrb)
-const calcsize = format => struct(format).size
-module.exports = {
-    struct, pack, unpack, pack_into, unpack_from, iter_unpack, calcsize }
-*/
