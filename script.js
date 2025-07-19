@@ -128,8 +128,7 @@ async function mkFile(dir, filename) {
         try {
             dir = await dir.getDirectoryHandle(dirname, {create: true})
         } catch (e) {
-            console.error(`Failed to create directory component! ("${dirname}").`)
-            throw new NxdtError()
+            throw new NxdtError(`Failed to create directory component! ("${dirname}").`)
         }
     }
 
@@ -138,8 +137,7 @@ async function mkFile(dir, filename) {
     try {
         file = await dir.getFileHandle(name, {create: true})
     } catch (e) {
-        console.error(`Failed to create file component! ("${name}").`)
-        throw new NxdtError()
+        throw new NxdtError(`Failed to create file component! ("${name}").`)
     }
 
     return await file.createWritable({mode: "exclusive"})
@@ -183,7 +181,7 @@ class NxdtSession {
 
         const cmd_block = await this.usb.read(rd_size)
         if (!cmd_block || cmd_block.byteLength != cmd_block_size) {
-            throw NxdtError(`Failed to read ${cmd_block_size}-byte long command block for command ID ${cmd_id}!`)
+            throw new NxdtError(`Failed to read ${cmd_block_size}-byte long command block for command ID ${cmd_id}!`)
         }
 
         console.debug('Received command block data.')
@@ -533,9 +531,8 @@ class NxdtSession {
 
         // Check if we support this ABI version.
         if ((this.client.abi.major  != NXDT.ABI.MAJOR) || (this.client.abi.minor != NXDT.ABI.MINOR)) {
-            console.error(`Unsupported ABI version (${this.client.abi.major}.${this.client.abi.minor} insted of ${NXDT.ABI.MAJOR}.${NXDT.ABI.MINOR})!`)
             await this.sendStatus(NXDT.STATUS.UNSUPPORTED_ABI_VERSION)
-            throw new NxdtError()
+            throw new NxdtError(`Unsupported ABI version (${this.client.abi.major}.${this.client.abi.minor} insted of ${NXDT.ABI.MAJOR}.${NXDT.ABI.MINOR})!`)
         }
 
         // Return status code.
@@ -599,19 +596,14 @@ async function start() {
         await globalThis.usb.open()
     } catch (e) {
         await globalThis.usb.device.forget()
+        throw new NxdtError('Cant open device')
     }
 
-    directory_button.disabled = true;
-    connect_button.disabled = true;
-    connect_button.querySelector('.value').innerText = `${globalThis.usb.device.productName} (${globalThis.usb.device.serialNumber})`
     try {
         await new NxdtSession(globalThis.directory, globalThis.usb)
     } catch (e) {
         console.error(e)
     }
-    connect_button.querySelector('.value').innerText = 'Not connected'
-    connect_button.disabled = false;
-    directory_button.disabled = false;
     transfer_dialog.close()
 
     await globalThis.usb.close()
@@ -633,7 +625,22 @@ async function usbRequestDevice() {
 
     globalThis.usb = await new NxdtUsb(usbDev);
 
-    await start();
+    connect_button.querySelector('.value').innerText = `${globalThis.usb.device.productName} (${globalThis.usb.device.serialNumber})`
+
+    directory_button.disabled = true;
+    connect_button.disabled = true;
+
+    try {
+        while (true) {
+            await start();
+        }
+    } catch (e) {
+        console.error(e)
+    }
+
+    connect_button.querySelector('.value').innerText = 'Not connected'
+    connect_button.disabled = false;
+    directory_button.disabled = false;
 }
 
 connect_button.addEventListener("click", usbRequestDevice)
