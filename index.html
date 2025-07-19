@@ -15,7 +15,7 @@
                     <div>Destination directory</div>
                     <div class="value">Not selected</div>
                 </button></li>
-            <li><button id="src">
+            <li><button id="src" disabled>
                     <div>Source device</div>
                     <div class="value">Not connected</div>
                 </button></li>
@@ -30,7 +30,7 @@
     </main>
     <dialog id="transfer" closedby="none">
         <p>Transfering: <span id="name">File name</span></p>
-        <progress id="bar" value="50" max="100"></progress>
+        <progress id="bar" value="0" max="0"></progress>
     </dialog>
     <dialog id="browser" closedby="none">
         <p>Your browser is not supported!</p>

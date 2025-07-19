@@ -88,9 +88,9 @@ class NxdtUsb {
     }
 
     async close() {
-        await this.device.releaseInterface(this.interface)
-        await this.device.reset()
-        await this.device.close()
+        try { await this.device.releaseInterface(this.interface) } catch (e) {}
+        try { await this.device.reset() } catch (e) {}
+        try { await this.device.close() } catch (e) {}
     }
 
     isValueAlignedToEndpointPacketSize(value) {
@@ -169,8 +169,7 @@ class NxdtSession {
         const cmd_header = await this.usb.read(NXDT.SIZE.CMD_HEADER)
 
         if (!cmd_header || cmd_header.byteLength != NXDT.SIZE.CMD_HEADER) {
-            console.error(`Failed to read ${NXDT.SIZE.CMD_HEADER}-byte long command header!`)
-            throw new NxdtError()
+            throw new NxdtError(`Failed to read ${NXDT.SIZE.CMD_HEADER}-byte long command header!`)
         }
 
         console.debug('Received command header data.')
@@ -184,8 +183,7 @@ class NxdtSession {
 
         const cmd_block = await this.usb.read(rd_size)
         if (!cmd_block || cmd_block.byteLength != cmd_block_size) {
-            console.error(`Failed to read ${cmd_block_size}-byte long command block for command ID ${cmd_id}!`)
-            throw NxdtError()
+            throw NxdtError(`Failed to read ${cmd_block_size}-byte long command block for command ID ${cmd_id}!`)
         }
 
         console.debug('Received command block data.')
@@ -298,6 +296,7 @@ class NxdtSession {
 
             // Update current offset.
             offset += chunk.byteLength
+            transfer_dialog.querySelector('progress').value += chunk.byteLength
         }
 
         await this.sendStatus(NXDT.STATUS.SUCCESS)
@@ -321,6 +320,10 @@ class NxdtSession {
 
         // Get file object.
         const file = await this.mkFile(filename)
+
+        transfer_dialog.querySelector('#name').innerText = filename;
+        transfer_dialog.querySelector('progress').max = file_size;
+        transfer_dialog.showModal()
 
         if (nsp_header_size) {
             var cmd_id, cmd_header
@@ -376,6 +379,8 @@ class NxdtSession {
         }
 
         await file.close()
+
+        transfer_dialog.close()
     }
 
     async handleStartExtractedFsDump(cmd_block) {
@@ -403,6 +408,10 @@ class NxdtSession {
 
         // Return status code.
         await this.sendStatus(NXDT.STATUS.SUCCESS)
+
+        transfer_dialog.querySelector('#name').innerText = extracted_fs_root_path;
+        transfer_dialog.querySelector('progress').max = extracted_fs_size;
+        transfer_dialog.showModal()
 
         var cmd_id, cmd_header
 
@@ -448,6 +457,8 @@ class NxdtSession {
         }
 
         await this.sendStatus(NXDT.STATUS.SUCCESS)
+
+        transfer_dialog.close()
     }
 
     async handleStartSession(cmd_block) {
@@ -519,10 +530,11 @@ class NxdtSession {
                 case NXDT.COMMAND.START_EXTRACTED_FS_DUMP:
                     await this.handleStartExtractedFsDump(cmd_block)
                     break;
+                case NXDT.COMMAND.END_SESSION:
+                    await this.sendStatus(NXDT.STATUS.SUCCESS)
+                    break;
             }
         }
-
-        await this.handleEndSession(cmd_block)
 
         console.info('Stopping server.')
     }
@@ -536,6 +548,7 @@ async function dstHandler() {
         return
     }
 
+    connect_button.disabled = false;
     directory_button.querySelector(".value").innerText = globalThis.directory.name;
     console.debug('Successfully selected output directory!')
 }
@@ -547,12 +560,18 @@ async function start() {
         await globalThis.usb.device.forget()
     }
 
+    directory_button.disabled = true;
+    connect_button.disabled = true;
+    connect_button.querySelector('.value').innerText = `${globalThis.usb.device.productName} (${globalThis.usb.device.serialNumber})`
     try {
         await new NxdtSession(globalThis.directory, globalThis.usb)
     } catch (e) {
-        await globalThis.usb.close()
-        throw e
+        console.error(e)
     }
+    connect_button.querySelector('.value').innerText = 'Not connected'
+    connect_button.disabled = false;
+    directory_button.disabled = false;
+    transfer_dialog.close()
 
     await globalThis.usb.close()
 }
@@ -575,34 +594,6 @@ async function usbRequestDevice() {
 
     await start();
 }
-
-async function usbReconnect(event) {
-    if (globalThis.usb) return;
-
-    globalThis.usb = await new NxdtUsb(event.device);
-
-    await start();
-}
-
-async function usbEnumerate() {
-    var dev
-    for (dev of (await navigator.usb.getDevices())) {
-        try {
-            globalThis.usb = await new NxdtUsb(usbDev);
-        } catch (e) {
-            continue
-        }
-        break
-    }
-
-    if (!globalThis.usb) return;
-
-    await start();
-}
-
-window.addEventListener("load", usbEnumerate)
-
-navigator.usb.addEventListener("connect", usbReconnect)
 
 connect_button.addEventListener("click", usbRequestDevice)
 directory_button.addEventListener("click", dstHandler)

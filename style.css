@@ -52,17 +52,14 @@
 
 /* Generic elements */
 body, dialog {
+    margin: auto;
+    max-width: 50rem;
     background-color: var(--background-color);
 }
 
 small {
     display: block;
     color: #b3b0b0;
-}
-
-body {
-    margin: 0 auto;
-    max-width: 50rem;
 }
 
 button {
