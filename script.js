@@ -37,6 +37,8 @@ const NXDT = {
 
 class NxdtError extends Error {}
 
+class NxdtInterrupted extends NxdtError {}
+
 class NxdtUsb {
     constructor(usbDev) {
         return this.setup(usbDev).then(() => this)
@@ -280,12 +282,7 @@ class NxdtSession {
                     [cmd_id, cmd_block] = await this.getCommand(chunk)
                 } catch (e) {}
                 if (cmd_block) {
-                    if (cmd_id != NXDT.COMMAND.CANCEL_FILE_TRANSFER || cmd_block.byteLength != 0) {
-                        await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
-                        throw new NxdtError(`Unexpected command during sendFileBlock (${cmd_id})!`)
-                    }
-                    await this.sendStatus(NXDT.STATUS.SUCCESS)
-                    throw new NxdtError("Transfer cancelled")
+                    await this.handleCancelFileTransfer(cmd_block)
                 }
             }
 
@@ -294,7 +291,7 @@ class NxdtSession {
 
             // Update current offset.
             offset += chunk.byteLength
-            transfer_dialog.querySelector('progress').value += chunk.byteLength
+            this.transfer.update(chunk.byteLength)
         }
 
         await this.sendStatus(NXDT.STATUS.SUCCESS)
@@ -311,6 +308,77 @@ class NxdtSession {
         return file
     }
 
+    async handleCancelFileTransfer(cmd_block) {
+        if (cmd_block.byteLength) {
+            await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+            throw new NxdtError(`Unexpected command block!`)
+        }
+        await this.sendStatus(NXDT.STATUS.SUCCESS)
+        throw new NxdtInterrupted("Transfer cancelled")
+    }
+
+    async handleSendNspBlock(file, file_size, nsp_header_size) {
+        var cmd_header, cmd_id, cmd_block
+
+        // Write NSP header padding right away.
+        await file.seek(nsp_header_size)
+
+        // NSP entrys
+        var offset = 0
+        while (offset < (file_size - nsp_header_size)) {
+            cmd_header = await this.getCmdHeader();
+            [cmd_id, cmd_block] = await this.getCommand(cmd_header);
+
+            switch (cmd_id) {
+                case NXDT.COMMAND.SEND_FILE_PROPERTIES:
+                    break;
+                case NXDT.COMMAND.CANCEL_FILE_TRANSFER:
+                    await this.handleCancelFileTransfer(cmd_block)
+                default:
+                    await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                    throw new NxdtError(`Unexpected command during nspEntry (${cmd_id})!`)
+            }
+
+            const [entryname, entry_size, entry_header] = await this.handleSendFilePropertiesHeader(cmd_block)
+            console.debug(`Reciving NSP entry ${entryname}`)
+
+            if (entry_header) {
+                console.error('NSP entry can not be a NSP file!')
+                await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                throw new NxdtError(`Unexpected fileType during nspEntry (${cmd_id})!`)
+            }
+
+            await this.handleSendFilePropertiesBlock(file, entry_size)
+            offset += entry_size
+        }
+
+        // NSP header
+        cmd_header = await this.getCmdHeader();
+        [cmd_id, cmd_block] = await this.getCommand(cmd_header);
+
+        switch (cmd_id) {
+            case NXDT.COMMAND.SEND_NSP_HEADER:
+                break;
+            case NXDT.COMMAND.CANCEL_FILE_TRANSFER:
+                await this.handleCancelFileTransfer(cmd_block)
+            default:
+                await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+                throw new NxdtError(`Unexpected command during nspEntry (${cmd_id})!`)
+        }
+
+        if (cmd_block.byteLength != nsp_header_size) {
+            await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
+            throw new NxdtError(`NSP header size mismatch! (${nsp_header_size} != ${cmd_block.byteLength}).`)
+        }
+
+        await file.seek(0)
+        await file.write(cmd_block)
+        offset += cmd_block.byteLength
+        this.transfer.update(cmd_block.byteLength)
+
+        await this.sendStatus(NXDT.STATUS.SUCCESS)
+    }
+
     async handleSendFileProperties(cmd_block) {
         console.debug(`Received SendFileProperties (${NXDT.COMMAND.SEND_FILE_PROPERTIES}) command.`)
 
@@ -318,88 +386,19 @@ class NxdtSession {
 
         // Get file object.
         const file = await this.mkFile(filename)
+        this.transfer = new NxdtTransfer(filename, file_size)
 
-        transfer_dialog.querySelector('#name').innerText = filename;
-        transfer_dialog.querySelector('progress').max = file_size;
-        transfer_dialog.showModal()
-
-        if (nsp_header_size) {
-            var cmd_id, cmd_header
-
-            // Write NSP header padding right away.
-            await file.seek(nsp_header_size)
-
-            // NSP entrys
-            var offset = 0
-            while (offset < (file_size - nsp_header_size)) {
-                cmd_header = await this.getCmdHeader();
-                [cmd_id, cmd_block] = await this.getCommand(cmd_header);
-
-                switch (cmd_id) {
-                    case NXDT.COMMAND.SEND_FILE_PROPERTIES:
-                        break;
-                    case NXDT.COMMAND.CANCEL_FILE_TRANSFER:
-                        if (cmd_block) {
-                            await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
-                            throw new NxdtError(`Unexpected command block! ${cmd_id}`)
-                        }
-                        await this.sendStatus(NXDT.STATUS.SUCCESS)
-                        throw new NxdtError("Transfer cancelled")
-                    default:
-                        await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
-                        throw new NxdtError(`Unexpected command during nspEntry (${cmd_id})!`)
-                }
-
-                const [entryname, entry_size, entry_header] = await this.handleSendFilePropertiesHeader(cmd_block)
-                console.debug(`Reciving NSP entry ${entryname}`)
-
-                if (entry_header) {
-                    console.error('NSP entry can not be a NSP file!')
-                    await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
-                    throw new NxdtError(`Unexpected fileType during nspEntry (${cmd_id})!`)
-                }
-
-                await this.handleSendFilePropertiesBlock(file, entry_size)
-                offset += entry_size
+        this.transfer.show()
+        try {
+            if (nsp_header_size) {
+                await this.handleSendNspBlock(file, file_size, nsp_header_size)
+            } else {
+                await this.handleSendFilePropertiesBlock(file, file_size)
             }
-
-            // NSP header
-            cmd_header = await this.getCmdHeader();
-            [cmd_id, cmd_block] = await this.getCommand(cmd_header);
-
-            switch (cmd_id) {
-                case NXDT.COMMAND.SEND_NSP_HEADER:
-                    break;
-                case NXDT.COMMAND.CANCEL_FILE_TRANSFER:
-                    if (cmd_block) {
-                        await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
-                        throw new NxdtError(`Unexpected command block! ${cmd_id}`)
-                    }
-                    await this.sendStatus(NXDT.STATUS.SUCCESS)
-                    throw new NxdtError("Transfer cancelled")
-                default:
-                    await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
-                    throw new NxdtError(`Unexpected command during nspEntry (${cmd_id})!`)
-            }
-
-            if (cmd_block.byteLength != nsp_header_size) {
-                await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
-                throw new NxdtError(`NSP header size mismatch! (${nsp_header_size} != ${cmd_block.byteLength}).`)
-            }
-
-            await file.seek(0)
-            await file.write(cmd_block)
-            offset += nsp_header_size
-            transfer_dialog.querySelector('progress').value += nsp_header_size
-
-            await this.sendStatus(NXDT.STATUS.SUCCESS)
-        } else {
-            await this.handleSendFilePropertiesBlock(file, file_size)
+        } finally {
+            this.transfer.close()
+            await file.close()
         }
-
-        await file.close()
-
-        transfer_dialog.close()
     }
 
     async handleStartExtractedFsDump(cmd_block) {
@@ -428,11 +427,18 @@ class NxdtSession {
         // Return status code.
         await this.sendStatus(NXDT.STATUS.SUCCESS)
 
-        transfer_dialog.querySelector('#name').innerText = extracted_fs_root_path;
-        transfer_dialog.querySelector('progress').max = extracted_fs_size;
-        transfer_dialog.showModal()
+        this.transfer = new NxdtTransfer(extracted_fs_root_path, extracted_fs_size)
 
-        var cmd_id, cmd_header
+        this.transfer.show()
+        try {
+            await this.handelFsBlock(extracted_fs_size)
+        } finally {
+            this.transfer.close()
+        }
+    }
+
+    async handelFsBlock(extracted_fs_size) {
+        var cmd_header, cmd_id, cmd_block
 
         // Transfer file system
         var offset = 0
@@ -444,12 +450,7 @@ class NxdtSession {
                 case NXDT.COMMAND.SEND_FILE_PROPERTIES:
                     break;
                 case NXDT.COMMAND.CANCEL_FILE_TRANSFER:
-                    if (cmd_block) {
-                        await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
-                        throw new NxdtError(`Unexpected command block! ${cmd_id}`)
-                    }
-                    await this.sendStatus(NXDT.STATUS.SUCCESS)
-                    throw new NxdtError("Transfer cancelled")
+                    await this.handleCancelFileTransfer(cmd_block)
                 default:
                     await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
                     throw new NxdtError(`Unexpected command during nspEntry (${cmd_id})!`)
@@ -479,12 +480,7 @@ class NxdtSession {
             case NXDT.COMMAND.END_EXTRACTED_FS_DUMP:
                 break;
             case NXDT.COMMAND.CANCEL_FILE_TRANSFER:
-                if (cmd_block) {
-                    await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
-                    throw new NxdtError(`Unexpected command block! ${cmd_id}`)
-                }
-                await this.sendStatus(NXDT.STATUS.SUCCESS)
-                throw new NxdtError("Transfer cancelled")
+                await this.handleCancelFileTransfer(cmd_block)
             default:
                 await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
                 throw new NxdtError(`Unexpected command during nspEntry (${cmd_id})!`)
@@ -496,8 +492,6 @@ class NxdtSession {
         }
 
         await this.sendStatus(NXDT.STATUS.SUCCESS)
-
-        transfer_dialog.close()
     }
 
     async handleStartSession(cmd_block) {
@@ -561,16 +555,22 @@ class NxdtSession {
 
             const [cmd_id, cmd_block] = await this.getCommand(cmd_header)
 
-            switch (cmd_id) {
-                case NXDT.COMMAND.SEND_FILE_PROPERTIES:
-                    await this.handleSendFileProperties(cmd_block)
-                    break;
-                case NXDT.COMMAND.START_EXTRACTED_FS_DUMP:
-                    await this.handleStartExtractedFsDump(cmd_block)
-                    break;
-                case NXDT.COMMAND.END_SESSION:
-                    await this.sendStatus(NXDT.STATUS.SUCCESS)
-                    break;
+            try {
+                switch (cmd_id) {
+                    case NXDT.COMMAND.SEND_FILE_PROPERTIES:
+                        await this.handleSendFileProperties(cmd_block)
+                        break;
+                    case NXDT.COMMAND.START_EXTRACTED_FS_DUMP:
+                        await this.handleStartExtractedFsDump(cmd_block)
+                        break;
+                    case NXDT.COMMAND.END_SESSION:
+                        await this.sendStatus(NXDT.STATUS.SUCCESS)
+                        break;
+                }
+            } catch (e) {
+                if (!(e instanceof NxdtInterrupted)) {
+                    throw e
+                }
             }
         }
 
@@ -591,29 +591,33 @@ async function dstHandler() {
     console.debug('Successfully selected output directory!')
 }
 
-async function start() {
-    try {
-        await globalThis.usb.open()
-    } catch (e) {
-        await globalThis.usb.device.forget()
-        throw new NxdtError('Cant open device')
+class NxdtTransfer {
+    constructor(name, size) {
+        this.dialog = document.getElementById("transfer")
+        this.title = this.dialog.querySelector('#name')
+        this.progress = this.dialog.querySelector('progress')
+
+        this.title.innerText = name;
+        this.progress.value = 0;
+        this.progress.max = size;
     }
 
-    try {
-        await new NxdtSession(globalThis.directory, globalThis.usb)
-    } catch (e) {
-        console.error(e)
+    show() {
+        this.dialog.showModal()
     }
-    transfer_dialog.close()
 
-    await globalThis.usb.close()
+    update(increment) {
+        this.progress.value += increment
+    }
+
+    close() {
+        this.dialog.close()
+    }
 }
 
 const connect_button = document.getElementById("src");
 const directory_button = document.getElementById("dst");
 const notify_button = document.getElementById("notify");
-const transfer_dialog = document.getElementById("transfer");
-const browser_dialog = document.getElementById("browser");
 
 async function usbRequestDevice() {
     try {
@@ -623,29 +627,24 @@ async function usbRequestDevice() {
         return
     }
 
-    globalThis.usb = await new NxdtUsb(usbDev);
-
-    connect_button.querySelector('.value').innerText = `${globalThis.usb.device.productName} (${globalThis.usb.device.serialNumber})`
-
-    directory_button.disabled = true;
-    connect_button.disabled = true;
-
     try {
-        while (true) {
-            await start();
-        }
+        globalThis.usb = await new NxdtUsb(usbDev);
     } catch (e) {
-        console.error(e)
+        await usbDev.forget()
+        throw e
     }
 
+    await globalThis.usb.open()
+    connect_button.querySelector('.value').innerText = `${globalThis.usb.device.productName} (${globalThis.usb.device.serialNumber})`
+
+    await new NxdtSession(globalThis.directory, globalThis.usb)
+
+    await globalThis.usb.close()
     connect_button.querySelector('.value').innerText = 'Not connected'
-    connect_button.disabled = false;
-    directory_button.disabled = false;
 }
 
 connect_button.addEventListener("click", usbRequestDevice)
 directory_button.addEventListener("click", dstHandler)
-notify_button.addEventListener("click", () => transfer_dialog.showModal())
 
 const fs_supported = window?.showDirectoryPicker;
 const usb_supported = navigator?.usb?.requestDevice;
@@ -655,8 +654,8 @@ console.debug(`File System API support: ${fs_supported ? 'Yes' : 'No'}`)
 
 if (Notification.permission == "granted") {}
 
-
 if (!fs_supported || !usb_supported) {
+    const browser_dialog = document.getElementById("browser");
     browser_dialog.showModal()
 }
 
