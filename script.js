@@ -278,7 +278,7 @@ class NxdtSession {
     }
 
     async handleNspTransfer(file, file_size, nsp_header_size) {
-        var cmd_header, cmd_id, cmd_block
+        var cmd_header, cmd_id, cmd_block_length, cmd_block
 
         // Write NSP header padding right away.
         await file.seek(nsp_header_size)
@@ -287,7 +287,8 @@ class NxdtSession {
         var offset = 0
         while (offset < (file_size - nsp_header_size)) {
             cmd_header = await this.getCmdHeader();
-            [cmd_id, cmd_block] = await this.getCommand(cmd_header);
+            [cmd_id, cmd_block_length] = await this.parseCmdHeader(cmd_header);
+            cmd_block = await this.getCmdBlock(cmd_block_length);
 
             if (cmd_id == NXDT.COMMAND.CANCEL_FILE_TRANSFER) {
                 await this.handleCancelCmd(cmd_id, cmd_block)
@@ -306,7 +307,8 @@ class NxdtSession {
 
         // NSP header
         cmd_header = await this.getCmdHeader();
-        [cmd_id, cmd_block] = await this.getCommand(cmd_header);
+        [cmd_id, cmd_block_length] = await this.parseCmdHeader(cmd_header);
+        cmd_block = await this.getCmdBlock(cmd_block_length);
 
         if (cmd_id == NXDT.COMMAND.CANCEL_FILE_TRANSFER) {
             await this.handleCancelCmd(cmd_id, cmd_block)
@@ -343,12 +345,13 @@ class NxdtSession {
 
             // Check if we're dealing with a CancelFileTransfer command.
             if (chunk.byteLength == NXDT.SIZE.CMD_HEADER) {
-                var cmd_id, cmd_block
+                var cmd_id, cmd_block_length, cmd_block
                 try {
-                    [cmd_id, cmd_block] = await this.getCommand(chunk)
+                    [cmd_id, cmd_block_length] = await this.parseCmdHeader(chunk)
                 } catch (e) {}
 
                 if (cmd_id == NXDT.COMMAND.CANCEL_FILE_TRANSFER) {
+                    cmd_block = await this.getCmdBlock(cmd_block_length);
                     await this.handleCancelCmd(cmd_id, cmd_block)
                 }
             }
@@ -408,8 +411,10 @@ class NxdtSession {
         }
 
         // FS end
+        var cmd_header, cmd_id, cmd_block_length, cmd_block
         cmd_header = await this.getCmdHeader();
-        [cmd_id, cmd_block] = await this.getCommand(cmd_header);
+        [cmd_id, cmd_block_length] = await this.parseCmdHeader(cmd_header);
+        cmd_block = await this.getCmdBlock(cmd_block_length);
 
         if (cmd_id == NXDT.COMMAND.CANCEL_FILE_TRANSFER) {
             await this.handleCancelCmd(cmd_id, cmd_block)
@@ -424,8 +429,10 @@ class NxdtSession {
         // Transfer file system
         var offset = 0
         while (offset < extracted_fs_size) {
+            var cmd_header, cmd_id, cmd_block_length, cmd_block
             cmd_header = await this.getCmdHeader();
-            [cmd_id, cmd_block] = await this.getCommand(cmd_header);
+            [cmd_id, cmd_block_length] = await this.parseCmdHeader(cmd_header);
+            cmd_block = await this.getCmdBlock(cmd_block_length);
 
             if (cmd_id == NXDT.COMMAND.CANCEL_FILE_TRANSFER) {
                 await this.handleCancelCmd(cmd_id, cmd_block)
