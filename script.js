@@ -151,7 +151,12 @@ class NxdtSession {
     async setup(dir, usb) {
         this.dir = dir
         this.usb = usb
-        await this.handleSessionCmd()
+
+        var cmd_header, cmd_id, cmd_block_length, cmd_block
+        cmd_header = await this.getCmdHeader();
+        [cmd_id, cmd_block_length] = await this.parseCmdHeader(cmd_header);
+        cmd_block = await this.getCmdBlock(cmd_block_length);
+        await this.handleSessionCmd(cmd_id, cmd_block)
     }
 
     async sendStatus(code) {
@@ -194,7 +199,8 @@ class NxdtSession {
             throw new NxdtError(`Failed to read ${NXDT.SIZE.CMD_HEADER}-byte long command header!`)
         }
 
-        const [magic, cmd_id, cmd_block_size, _] = struct("<4sIII").unpack_from(header, 0)
+        const [magic, cmd_id, cmd_block_size, _] = struct("<4sIII").unpack_from(cmd_header, 0)
+        console.debug(`parseCmdHeader(magic=${magic}, cmd_id=${cmd_id}, cmd_block_size=${cmd_block_size})`)
 
         // Verify magic word.
         if (magic != NXDT.ABI.MAGIC) {
@@ -211,11 +217,19 @@ class NxdtSession {
 
     async getCmdBlock(cmd_block_size) {
         // Handle Zero-Length Termination packet (if needed).
-        const rd_size = this.usb.isValueAlignedToEndpointPacketSize(cmd_block_size) ? cmd_block_size + 1 : cmd_block_size
+        var rd_size = cmd_block_size
+        if (this.usb.isValueAlignedToEndpointPacketSize(cmd_block_size)) {
+            rd_size += 1
+        }
 
-        const cmd_block = await this.usb.read(rd_size)
+        var cmd_block
+        if (cmd_block_size) {
+            cmd_block = await this.usb.read(rd_size)
+        } else {
+            cmd_block = new ArrayBuffer()
+        }
 
-        if (!cmd_block || cmd_block.byteLength != cmd_block_size) {
+        if (cmd_block.byteLength != cmd_block_size) {
             throw new NxdtError(`Failed to read ${cmd_block_size}-byte long command block for command ID ${cmd_id}!`)
         }
 
@@ -399,7 +413,7 @@ class NxdtSession {
     }
 
     async handleFsCmd(cmd_id, cmd_block) {
-        const [extracted_fs_size, extracted_fs_root_path] = this.parseFsCmdHeader(cmd_id, cmd_block)
+        const [extracted_fs_size, extracted_fs_root_path] = await this.parseFsCmdHeader(cmd_id, cmd_block)
 
         this.transfer = new NxdtTransfer(extracted_fs_root_path, extracted_fs_size)
 
@@ -501,7 +515,7 @@ class NxdtSession {
         while (true) {
             cmd_header = await this.getCmdHeader();
             [cmd_id, cmd_block_length] = await this.parseCmdHeader(cmd_header);
-            cmd_block = await this.getCmdBlock(cmd_header);
+            cmd_block = await this.getCmdBlock(cmd_block_length);
 
             try {
                 switch (cmd_id) {
@@ -512,6 +526,7 @@ class NxdtSession {
                         await this.handleFsCmd(cmd_id, cmd_block)
                         break;
                     case NXDT.COMMAND.END_SESSION:
+                        await this.handleEndSessionCmd(cmd_id, cmd_block)
                         return
                     default:
                         await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
@@ -529,19 +544,15 @@ class NxdtSession {
 
         var cmd_header, cmd_block_length
 
+        /*
         cmd_header = await this.getCmdHeader();
         [cmd_id, cmd_block_length] = await this.parseCmdHeader(cmd_header);
         cmd_block = await this.getCmdBlock(cmd_block_length);
 
         await this.handleStartSessionCmd(cmd_id, cmd_block)
+        */
 
         await this.handleSessionTransfer()
-
-        cmd_header = await this.getCmdHeader();
-        [cmd_id, cmd_block_length] = await this.parseCmdHeader(cmd_header);
-        cmd_block = await this.getCmdBlock(cmd_block_length);
-
-        await this.handleEndSessionCmd(cmd_id, cmd_block)
 
         console.info('Stopping server.')
 
@@ -611,11 +622,12 @@ async function requestDevice() {
 
     await globalThis.usb.open()
     connect_button.querySelector('.value').innerText = `${globalThis.usb.device.productName} (${globalThis.usb.device.serialNumber})`
-
-    await new NxdtSession(globalThis.directory, globalThis.usb)
-
-    await globalThis.usb.close()
-    connect_button.querySelector('.value').innerText = 'Not connected'
+    try {
+        await new NxdtSession(globalThis.directory, globalThis.usb)
+    } finally {
+        await globalThis.usb.close()
+        connect_button.querySelector('.value').innerText = 'Not connected'
+    }
 }
 
 
