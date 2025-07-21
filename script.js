@@ -655,75 +655,77 @@ if (Notification.permission == "granted") {}
 
 
 // Modified https://github.com/lyngklip/structjs
-const rechk = /^([<>])?(([1-9]\d*)?([xcbB?hHiIlLqQefdsp]))*$/
-const refmt = /([1-9]\d*)?([xcbB?hHiIlLqQefdsp])/g
-const str = (v,o,c) => String.fromCharCode(
-    ...new Uint8Array(v.buffer, v.byteOffset + o, c))
-const rts = (v,o,c,s) => new Uint8Array(v.buffer, v.byteOffset + o, c)
-    .set(s.split('').map(str => str.charCodeAt(0)))
-const pst = (v,o,c) => str(v, o + 1, Math.min(v.getUint8(o), c - 1))
-const tsp = (v,o,c,s) => { v.setUint8(o, s.length); rts(v, o + 1, c - 1, s) }
-const lut = le => ({
-    x: c=>[1,c,0],
-    c: c=>[c,1,o=>({u:v=>str(v, o, 1)      , p:(v,c)=>rts(v, o, 1, c)     })],
-    '?': c=>[c,1,o=>({u:v=>Boolean(v.getUint8(o)),p:(v,B)=>v.setUint8(o,B)})],
-    b: c=>[c,1,o=>({u:v=>v.getInt8(   o   ), p:(v,b)=>v.setInt8(   o,b   )})],
-    B: c=>[c,1,o=>({u:v=>v.getUint8(  o   ), p:(v,B)=>v.setUint8(  o,B   )})],
-    h: c=>[c,2,o=>({u:v=>v.getInt16(  o,le), p:(v,h)=>v.setInt16(  o,h,le)})],
-    H: c=>[c,2,o=>({u:v=>v.getUint16( o,le), p:(v,H)=>v.setUint16( o,H,le)})],
-    i: c=>[c,4,o=>({u:v=>v.getInt32(  o,le), p:(v,i)=>v.setInt32(  o,i,le)})],
-    I: c=>[c,4,o=>({u:v=>v.getUint32( o,le), p:(v,I)=>v.setUint32( o,I,le)})],
-    l: c=>[c,4,o=>({u:v=>v.getInt32(  o,le), p:(v,i)=>v.setInt32(  o,i,le)})],
-    L: c=>[c,4,o=>({u:v=>v.getUint32( o,le), p:(v,I)=>v.setUint32( o,I,le)})],
-    q: c=>[c,8,o=>({u:v=>v.getBigInt64(  o,le), p:(v,i)=>v.setBigInt64(  o,i,le)})],
-    Q: c=>[c,8,o=>({u:v=>v.getBigUint64( o,le), p:(v,I)=>v.setBigUint64( o,I,le)})],
-    e: c=>[c,2,o=>({u:v=>v.getFloat16(o,le), p:(v,f)=>v.setFloat16(o,f,le)})],
-    f: c=>[c,4,o=>({u:v=>v.getFloat32(o,le), p:(v,f)=>v.setFloat32(o,f,le)})],
-    d: c=>[c,8,o=>({u:v=>v.getFloat64(o,le), p:(v,d)=>v.setFloat64(o,d,le)})],
-    s: c=>[1,c,o=>({u:v=>str(v,o,c), p:(v,s)=>rts(v,o,c,s.slice(0,c    ) )})],
-    p: c=>[1,c,o=>({u:v=>pst(v,o,c), p:(v,s)=>tsp(v,o,c,s.slice(0,c - 1) )})]
+const re_format = /^([<>])?(([1-9]\d*)?([xcbB?hHiIlLqQefdsp]))*$/
+const re_token = /([1-9]\d*)?([xcbB?hHiIlLqQefdsp])/g
+const str = (view,offset,count) => String.fromCharCode(...new Uint8Array(view.buffer, view.byteOffset + offset, count))
+const rts = (view,offset,count,s) => new Uint8Array(view.buffer, view.byteOffset + offset, count).set(s.split('').map(str => str.charCodeAt(0)))
+const pst = (view,offset,count) => str(view, offset + 1, Math.min(view.getUint8(offset), count - 1))
+const tsp = (view,offset,count,s) => { view.setUint8(offset, s.length); rts(view, offset + 1, count - 1, s) }
+const endianTable = littleEndian => ({
+    x: token_int=>[1,token_int,0],
+    c: token_int=>[token_int,1,offset=>({unpack:view=>str(view, offset, 1)      , pack:(view,char)=>rts(view, offset, 1, char)     })],
+    '?': token_int=>[token_int,1,offset=>({unpack:view=>Boolean(view.getUint8(offset)),pack:(view,bool)=>view.setUint8(offset,bool)})],
+    b: token_int=>[token_int,1,offset=>({unpack:view=>view.getInt8(   offset   ), pack:(view,char)=>view.setInt8(   offset,char   )})],
+    B: token_int=>[token_int,1,offset=>({unpack:view=>view.getUint8(  offset   ), pack:(view,uchar)=>view.setUint8(  offset,uchar   )})],
+    h: token_int=>[token_int,2,offset=>({unpack:view=>view.getInt16(  offset,littleEndian), pack:(view,short)=>view.setInt16(  offset,short,littleEndian)})],
+    H: token_int=>[token_int,2,offset=>({unpack:view=>view.getUint16( offset,littleEndian), pack:(view,ushort)=>view.setUint16( offset,ushort,littleEndian)})],
+    i: token_int=>[token_int,4,offset=>({unpack:view=>view.getInt32(  offset,littleEndian), pack:(view,int)=>view.setInt32(  offset,int,littleEndian)})],
+    I: token_int=>[token_int,4,offset=>({unpack:view=>view.getUint32( offset,littleEndian), pack:(view,uint)=>view.setUint32( offset,uint,littleEndian)})],
+    l: token_int=>[token_int,4,offset=>({unpack:view=>view.getInt32(  offset,littleEndian), pack:(view,long)=>view.setInt32(  offset,long,littleEndian)})],
+    L: token_int=>[token_int,4,offset=>({unpack:view=>view.getUint32( offset,littleEndian), pack:(view,ulong)=>view.setUint32( offset,ulong,littleEndian)})],
+    q: token_int=>[token_int,8,offset=>({unpack:view=>view.getBigInt64(  offset,littleEndian), pack:(view,longlong)=>view.setBigInt64(  offset,longlong,littleEndian)})],
+    Q: token_int=>[token_int,8,offset=>({unpack:view=>view.getBigUint64( offset,littleEndian), pack:(view,ulonglong)=>view.setBigUint64( offset,ulonglong,littleEndian)})],
+    e: token_int=>[token_int,2,offset=>({unpack:view=>view.getFloat16(offset,littleEndian), pack:(view,hfloat)=>view.setFloat16(offset,hfloat,littleEndian)})],
+    f: token_int=>[token_int,4,offset=>({unpack:view=>view.getFloat32(offset,littleEndian), pack:(view,float)=>view.setFloat32(offset,float,littleEndian)})],
+    d: token_int=>[token_int,8,offset=>({unpack:view=>view.getFloat64(offset,littleEndian), pack:(view,double)=>view.setFloat64(offset,double,littleEndian)})],
+    s: token_int=>[1,token_int,offset=>({unpack:view=>str(view,offset,token_int), pack:(view,str)=>rts(view,offset,token_int,str.slice(0,token_int    ) )})],
+    p: token_int=>[1,token_int,offset=>({unpack:view=>pst(view,offset,token_int), pack:(view,str)=>tsp(view,offset,token_int,str.slice(0,token_int - 1) )})]
 })
-const errbuf = new RangeError("Structure larger than remaining buffer")
-const errval = new RangeError("Not enough values for structure")
+const error_buffer = new RangeError("Structure larger than remaining buffer")
+const error_values = new RangeError("Not enough values for structure")
 
 function struct(format) {
-    let fns = [], size = 0, m = rechk.exec(format)
-    if (!m) { throw new RangeError("Invalid format string") }
+    let format_handlers = [], size = 0, match = re_format.exec(format)
+    if (!match) { throw new RangeError("Invalid format string") }
 
-    const t = lut('<' === m[1])
-    const lu = (n, c) => t[c](n ? parseInt(n, 10) : 1)
+    const littleEndian = '<' === match[1]
+    const table = endianTable(littleEndian)
 
-    while (m = refmt.exec(format)) {
-        ((r, s, f) => {
-            for (let i = 0; i < r; ++i, size += s) {
-                if (f) {
-                    fns.push(f(size))
+    while (match = re_token.exec(format)) {
+        var [token_int, token_code] = match.slice(1);
+        token_int = token_int ? parseInt(token_int, 10) : 1;
+        var [token_reps, token_size, get_token_handlers] = table[token_code](token_int);
+
+        {
+            for (let i = 0; i < token_reps; ++i, size += token_size) {
+                if (get_token_handlers) {
+                    format_handlers.push(get_token_handlers(size))
                 }
             }
-        })(...lu(...m.slice(1)))
+        }
     }
 
-    const unpack_from = (arrb, offs) => {
-        if (arrb.byteLength < (offs|0) + size) { throw errbuf }
-        let v = new DataView(arrb, offs|0)
-        return fns.map(f => f.u(v))
+    const unpack_from = (buffer, offset) => {
+        if (buffer.byteLength < (offset|0) + size) { throw error_buffer }
+        let view = new DataView(buffer, offset|0)
+        return format_handlers.map(token_handlers => token_handlers.unpack(view))
     }
-    const pack_into = (arrb, offs, ...values) => {
-        if (values.length < fns.length) { throw errval }
-        if (arrb.byteLength < offs + size) { throw errbuf }
-        const v = new DataView(arrb, offs)
-        new Uint8Array(arrb, offs, size).fill(0)
-        fns.forEach((f, i) => f.p(v, values[i]))
+    const pack_into = (buffer, offset, ...values) => {
+        if (values.length < format_handlers.length) { throw error_values }
+        if (buffer.byteLength < offset + size) { throw error_buffer }
+        const view = new DataView(buffer, offset)
+        new Uint8Array(buffer, offset, size).fill(0)
+        format_handlers.forEach((token_handlers, index) => token_handlers.pack(view, values[index]))
     }
     const pack = (...values) => {
-        let b = new ArrayBuffer(size)
-        pack_into(b, 0, ...values)
-        return b
+        let buffer = new ArrayBuffer(size)
+        pack_into(buffer, 0, ...values)
+        return buffer
     }
-    const unpack = arrb => unpack_from(arrb, 0)
-    function* iter_unpack(arrb) { 
-        for (let offs = 0; offs + size <= arrb.byteLength; offs += size) {
-            yield unpack_from(arrb, offs);
+    const unpack = buffer => unpack_from(buffer, 0)
+    function* iter_unpack(buffer) { 
+        for (let offset = 0; offset + size <= buffer.byteLength; offset += size) {
+            yield unpack_from(buffer, offset);
         }
     }
     return Object.freeze({
