@@ -5,8 +5,8 @@ const NXDT = {
     },
     SIZE: {
         CMD_HEADER: 0x10,
-        START_SESSION_HEADER          : 0x10,
-        SEND_FILE_PROPERTIES_HEADER   : 0x320,
+        START_SESSION_HEADER: 0x10,
+        SEND_FILE_PROPERTIES_HEADER: 0x320,
         START_EXTRACTED_FS_DUMP_HEADER: 0x310,
         SEND_FILE_PROPERTIES_TRANSFER: 0x800000,
         SEND_FILE_PROPERTIES_NAME: 0x300,
@@ -17,27 +17,27 @@ const NXDT = {
         MAGIC: 'NXDT'
     },
     COMMAND: {
-        START_SESSION          : 0,
-        SEND_FILE_PROPERTIES   : 1,
-        CANCEL_FILE_TRANSFER   : 2,
-        SEND_NSP_HEADER        : 3,
-        END_SESSION            : 4,
+        START_SESSION: 0,
+        SEND_FILE_PROPERTIES: 1,
+        CANCEL_FILE_TRANSFER: 2,
+        SEND_NSP_HEADER: 3,
+        END_SESSION: 4,
         START_EXTRACTED_FS_DUMP: 5,
-        END_EXTRACTED_FS_DUMP  : 6,
+        END_EXTRACTED_FS_DUMP: 6,
     },
     STATUS: {
-        SUCCESS                : 0,
-        INVALID_MAGIC_WORD     : 4,
-        UNSUPPORTED_CMD        : 5,
+        SUCCESS: 0,
+        INVALID_MAGIC_WORD: 4,
+        UNSUPPORTED_CMD: 5,
         UNSUPPORTED_ABI_VERSION: 6,
-        MALFORMED_CMD          : 7,
-        HOST_IO_ERROR          : 8,
+        MALFORMED_CMD: 7,
+        HOST_IO_ERROR: 8,
     }
 }
 
-class NxdtError extends Error {}
+class NxdtError extends Error { }
 
-class NxdtInterrupted extends NxdtError {}
+class NxdtInterrupted extends NxdtError { }
 
 class NxdtUsb {
     constructor(usbDev) {
@@ -90,9 +90,9 @@ class NxdtUsb {
     }
 
     async close() {
-        try { await this.device.releaseInterface(this.interface) } catch (e) {}
-        try { await this.device.reset() } catch (e) {}
-        try { await this.device.close() } catch (e) {}
+        try { await this.device.releaseInterface(this.interface) } catch (e) { }
+        try { await this.device.reset() } catch (e) { }
+        try { await this.device.close() } catch (e) { }
     }
 
     isValueAlignedToEndpointPacketSize(value) {
@@ -160,7 +160,7 @@ class NxdtSession {
     }
 
     async sendStatus(code) {
-        var status = struct('<4sIH6x').pack(NXDT.ABI.MAGIC, code, this.usb.packetSize)
+        var status = new Struct('<4sIH6x').pack(NXDT.ABI.MAGIC, code, this.usb.packetSize)
         var wr = await this.usb.write(status)
 
         if (wr != status.byteLength) {
@@ -199,7 +199,7 @@ class NxdtSession {
             throw new NxdtError(`Failed to read ${NXDT.SIZE.CMD_HEADER}-byte long command header!`)
         }
 
-        const [magic, cmd_id, cmd_block_size, _] = struct("<4sIII").unpack_from(cmd_header, 0)
+        const [magic, cmd_id, cmd_block_size, _] = new Struct("<4sIII").unpack_from(cmd_header, 0)
         console.debug(`parseCmdHeader(magic=${magic}, cmd_id=${cmd_id}, cmd_block_size=${cmd_block_size})`)
 
         // Verify magic word.
@@ -265,8 +265,8 @@ class NxdtSession {
         }
 
         // Parse command block.
-        const [raw_file_size, filename_length, nsp_header_size] = struct('<QII').unpack_from(cmd_block, 0)
-        const filename = struct(`<${filename_length}s`).unpack_from(cmd_block, 16)[0]
+        const [raw_file_size, filename_length, nsp_header_size] = new Struct('<QII').unpack_from(cmd_block, 0)
+        const filename = new Struct(`<${filename_length}s`).unpack_from(cmd_block, 16)[0]
         const file_size = Number(raw_file_size)
 
         // Print info.
@@ -362,7 +362,7 @@ class NxdtSession {
                 var cmd_id, cmd_block_length, cmd_block
                 try {
                     [cmd_id, cmd_block_length] = await this.parseCmdHeader(chunk)
-                } catch (e) {}
+                } catch (e) { }
 
                 if (cmd_id == NXDT.COMMAND.CANCEL_FILE_TRANSFER) {
                     cmd_block = await this.getCmdBlock(cmd_block_length);
@@ -397,7 +397,7 @@ class NxdtSession {
         }
 
         // Parse command block.
-        var [extracted_fs_size, extracted_fs_root_path] = struct(`<Q${NXDT.SIZE.SEND_FILE_PROPERTIES_NAME}s`).unpack_from(cmd_block, 0)
+        var [extracted_fs_size, extracted_fs_root_path] = new Struct(`<Q${NXDT.SIZE.SEND_FILE_PROPERTIES_NAME}s`).unpack_from(cmd_block, 0)
 
         // Perform sanity checks.
         if (extracted_fs_size > BigInt(Number.MAX_SAFE_INTEGER)) {
@@ -481,7 +481,7 @@ class NxdtSession {
         }
 
         // Parse command block.
-        const [version_major, version_minor, version_micro, abi_version, version_commit] = struct('<BBBB8s').unpack_from(cmd_block, 0)
+        const [version_major, version_minor, version_micro, abi_version, version_commit] = new Struct('<BBBB8s').unpack_from(cmd_block, 0)
         const [abi_major, abi_minor] = [((abi_version >> 4) & 0x0F), (abi_version & 0x0F)]
 
         this.client = {
@@ -501,7 +501,7 @@ class NxdtSession {
         console.log(`Client info: ${this.usb.device.productName} v${this.client.version.major}.${this.client.version.minor}.${this.client.version.micro}, USB ABI v${this.client.abi.major}.${this.client.abi.minor} (commit ${this.client.version.commit}), USB ${this.usb.version.major}.${this.usb.version.minor}`)
 
         // Check if we support this ABI version.
-        if ((this.client.abi.major  != NXDT.ABI.MAJOR) || (this.client.abi.minor != NXDT.ABI.MINOR)) {
+        if ((this.client.abi.major != NXDT.ABI.MAJOR) || (this.client.abi.minor != NXDT.ABI.MINOR)) {
             await this.sendStatus(NXDT.STATUS.UNSUPPORTED_ABI_VERSION)
         }
 
@@ -577,7 +577,7 @@ async function makeFile(dir, filename) {
     var dirname
     for (dirname of dirs) {
         try {
-            dir = await dir.getDirectoryHandle(dirname, {create: true})
+            dir = await dir.getDirectoryHandle(dirname, { create: true })
         } catch (e) {
             throw new NxdtError(`Failed to create directory component! ("${dirname}").`)
         }
@@ -586,17 +586,17 @@ async function makeFile(dir, filename) {
     // Make sure the output filepath doesn't point to an existing directory.
     var file
     try {
-        file = await dir.getFileHandle(name, {create: true})
+        file = await dir.getFileHandle(name, { create: true })
     } catch (e) {
         throw new NxdtError(`Failed to create file component! ("${name}").`)
     }
 
-    return await file.createWritable({mode: "exclusive"})
+    return await file.createWritable({ mode: "exclusive" })
 }
 
 async function requestDirectory() {
     try {
-        globalThis.directory = await window.showDirectoryPicker({mode: "readwrite"})
+        globalThis.directory = await window.showDirectoryPicker({ mode: "readwrite" })
     } catch (e) {
         return
     }
@@ -651,83 +651,134 @@ if (!fs_supported || !usb_supported) {
 }
 
 
-if (Notification.permission == "granted") {}
+if (Notification.permission == "granted") { }
 
 
-// Modified https://github.com/lyngklip/structjs
-const re_format = /^([<>])?(([1-9]\d*)?([xcbB?hHiIlLqQefdsp]))*$/
-const re_token = /([1-9]\d*)?([xcbB?hHiIlLqQefdsp])/g
-const str = (view,offset,count) => String.fromCharCode(...new Uint8Array(view.buffer, view.byteOffset + offset, count))
-const rts = (view,offset,count,s) => new Uint8Array(view.buffer, view.byteOffset + offset, count).set(s.split('').map(str => str.charCodeAt(0)))
-const pst = (view,offset,count) => str(view, offset + 1, Math.min(view.getUint8(offset), count - 1))
-const tsp = (view,offset,count,s) => { view.setUint8(offset, s.length); rts(view, offset + 1, count - 1, s) }
-const endianTable = littleEndian => ({
-    x: token_int=>[1,token_int,0],
-    c: token_int=>[token_int,1,offset=>({unpack:view=>str(view, offset, 1)      , pack:(view,char)=>rts(view, offset, 1, char)     })],
-    '?': token_int=>[token_int,1,offset=>({unpack:view=>Boolean(view.getUint8(offset)),pack:(view,bool)=>view.setUint8(offset,bool)})],
-    b: token_int=>[token_int,1,offset=>({unpack:view=>view.getInt8(   offset   ), pack:(view,char)=>view.setInt8(   offset,char   )})],
-    B: token_int=>[token_int,1,offset=>({unpack:view=>view.getUint8(  offset   ), pack:(view,uchar)=>view.setUint8(  offset,uchar   )})],
-    h: token_int=>[token_int,2,offset=>({unpack:view=>view.getInt16(  offset,littleEndian), pack:(view,short)=>view.setInt16(  offset,short,littleEndian)})],
-    H: token_int=>[token_int,2,offset=>({unpack:view=>view.getUint16( offset,littleEndian), pack:(view,ushort)=>view.setUint16( offset,ushort,littleEndian)})],
-    i: token_int=>[token_int,4,offset=>({unpack:view=>view.getInt32(  offset,littleEndian), pack:(view,int)=>view.setInt32(  offset,int,littleEndian)})],
-    I: token_int=>[token_int,4,offset=>({unpack:view=>view.getUint32( offset,littleEndian), pack:(view,uint)=>view.setUint32( offset,uint,littleEndian)})],
-    l: token_int=>[token_int,4,offset=>({unpack:view=>view.getInt32(  offset,littleEndian), pack:(view,long)=>view.setInt32(  offset,long,littleEndian)})],
-    L: token_int=>[token_int,4,offset=>({unpack:view=>view.getUint32( offset,littleEndian), pack:(view,ulong)=>view.setUint32( offset,ulong,littleEndian)})],
-    q: token_int=>[token_int,8,offset=>({unpack:view=>view.getBigInt64(  offset,littleEndian), pack:(view,longlong)=>view.setBigInt64(  offset,longlong,littleEndian)})],
-    Q: token_int=>[token_int,8,offset=>({unpack:view=>view.getBigUint64( offset,littleEndian), pack:(view,ulonglong)=>view.setBigUint64( offset,ulonglong,littleEndian)})],
-    e: token_int=>[token_int,2,offset=>({unpack:view=>view.getFloat16(offset,littleEndian), pack:(view,hfloat)=>view.setFloat16(offset,hfloat,littleEndian)})],
-    f: token_int=>[token_int,4,offset=>({unpack:view=>view.getFloat32(offset,littleEndian), pack:(view,float)=>view.setFloat32(offset,float,littleEndian)})],
-    d: token_int=>[token_int,8,offset=>({unpack:view=>view.getFloat64(offset,littleEndian), pack:(view,double)=>view.setFloat64(offset,double,littleEndian)})],
-    s: token_int=>[1,token_int,offset=>({unpack:view=>str(view,offset,token_int), pack:(view,str)=>rts(view,offset,token_int,str.slice(0,token_int    ) )})],
-    p: token_int=>[1,token_int,offset=>({unpack:view=>pst(view,offset,token_int), pack:(view,str)=>tsp(view,offset,token_int,str.slice(0,token_int - 1) )})]
-})
-const error_buffer = new RangeError("Structure larger than remaining buffer")
-const error_values = new RangeError("Not enough values for structure")
+// Highly modified https://github.com/lyngklip/structjs
 
-function struct(format) {
-    let format_handlers = [], size = 0, match = re_format.exec(format)
-    if (!match) { throw new RangeError("Invalid format string") }
+class StructError extends Error {}
 
-    const littleEndian = '<' === match[1]
-    const table = endianTable(littleEndian)
+class Struct {
+    static #re_token = /([1-9]\d*)?([xcbB?hHiIlLqQefdsp])/g
+    static #re_format = /^([<>])?(([1-9]\d*)?([xcbB?hHiIlLqQefdsp]))*$/
 
-    while (match = re_token.exec(format)) {
-        var [token_int, token_code] = match.slice(1);
-        token_int = token_int ? parseInt(token_int, 10) : 1;
-        var [token_reps, token_size, get_token_handlers] = table[token_code](token_int);
+    static #unpack_string(view, offset, size) { return String.fromCharCode(...new Uint8Array(view.buffer, view.byteOffset + offset, size)) }
+    static #pack_string(view, offset, size, value) { new Uint8Array(view.buffer, view.byteOffset + offset, size).set(value.split('').map(str => str.charCodeAt(0))) }
+    static #unpack_pascal(view, offset, size) { return Struct.#unpack_string(view, offset + 1, Math.min(view.getUint8(offset), size - 1)) }
+    static #pack_pascal(view, offset, size, value) { view.setUint8(offset, value.length); Struct.#pack_string(view, offset + 1, size - 1, value) }
 
-        {
-            for (let i = 0; i < token_reps; ++i, size += token_size) {
-                if (get_token_handlers) {
-                    format_handlers.push(get_token_handlers(size))
-                }
+    static sizeof_x(count) { return { reps: 1, size: count } }
+    static sizeof_c(count) { return { reps: count, size: 1 } }
+    static pack_c(view, offset, size, littleEndian, value) { Struct.#pack_string(view, offset, 1, value) }
+    static unpack_c(view, offset, size, littleEndian) { return Struct.#unpack_string(view, offset, 1) }
+    static sizeof_1(count) { return { reps: count, size: 1 } }
+    static pack_0(view, offset, size, littleEndian, value) { view.setUint8(offset, value) }
+    static unpack_0(view, offset, size, littleEndian) { return view.getInt8(offset) }
+    static sizeof_b(count) { return { reps: count, size: 1 } }
+    static pack_b(view, offset, size, littleEndian, value) { view.setInt8(offset, value) }
+    static unpack_b(view, offset, size, littleEndian) { return view.getInt8(offset) }
+    static sizeof_B(count) { return { reps: count, size: 1 } }
+    static pack_B(view, offset, size, littleEndian, value) { view.setUint8(offset, value) }
+    static unpack_B(view, offset, size, littleEndian) { return view.getUint8(offset) }
+    static sizeof_h(count) { return { reps: count, size: 2 } }
+    static pack_h(view, offset, size, littleEndian, value) { view.setInt16(offset, value, littleEndian) }
+    static unpack_h(view, offset, size, littleEndian) { return view.getInt16(offset, littleEndian) }
+    static sizeof_H(count) { return { reps: count, size: 2 } }
+    static pack_H(view, offset, size, littleEndian, value) { view.setUint16(offset, value, littleEndian) }
+    static unpack_H(view, offset, size, littleEndian) { return view.getUint16(offset, littleEndian) }
+    static sizeof_i(count) { return { reps: count, size: 4 } }
+    static pack_i(view, offset, size, littleEndian, value) { view.setInt32(offset, value, littleEndian) }
+    static unpack_i(view, offset, size, littleEndian) { return view.getInt32(offset, littleEndian) }
+    static sizeof_I(count) { return { reps: count, size: 4 } }
+    static pack_I(view, offset, size, littleEndian, value) { view.setUint32(offset, value, littleEndian) }
+    static unpack_I(view, offset, size, littleEndian) { return view.getUint32(offset, littleEndian) }
+    static sizeof_l(count) { return { reps: count, size: 4 } }
+    static pack_l(view, offset, size, littleEndian, value) { view.setInt32(offset, value, littleEndian) }
+    static unpack_l(view, offset, size, littleEndian) { return view.getInt32(offset, littleEndian) }
+    static sizeof_L(count) { return { reps: count, size: 4 } }
+    static pack_L(view, offset, size, littleEndian, value) { view.setUint32(offset, value, littleEndian) }
+    static unpack_L(view, offset, size, littleEndian) { return view.getUint32(offset, littleEndian) }
+    static sizeof_q(count) { return { reps: count, size: 8 } }
+    static pack_q(view, offset, size, littleEndian, value) { view.setBigInt64(offset, value, littleEndian) }
+    static unpack_q(view, offset, size, littleEndian) { return view.getBigInt64(offset, littleEndian) }
+    static sizeof_Q(count) { return { reps: count, size: 8 } }
+    static pack_Q(view, offset, size, littleEndian, value) { view.setBigUint64(offset, value, littleEndian) }
+    static unpack_Q(view, offset, size, littleEndian) { return view.getBigUint64(offset, littleEndian) }
+    static sizeof_e(count) { return { reps: count, size: 2 } }
+    static pack_e(view, offset, size, littleEndian, value) { view.setFloat16(offset, value, littleEndian) }
+    static unpack_e(view, offset, size, littleEndian) { return view.getFloat16(offset, littleEndian) }
+    static sizeof_f(count) { return { reps: count, size: 4 } }
+    static pack_f(view, offset, size, littleEndian, value) { view.setFloat32(offset, value, littleEndian) }
+    static unpack_f(view, offset, size, littleEndian) { return view.getFloat32(offset, littleEndian) }
+    static sizeof_d(count) { return { reps: count, size: 8 } }
+    static pack_d(view, offset, size, littleEndian, value) { view.setFloat64(offset, value, littleEndian) }
+    static unpack_d(view, offset, size, littleEndian) { return view.getFloat64(offset, littleEndian) }
+    static sizeof_s(count) { return { reps: 1, size: count } }
+    static pack_s(view, offset, size, littleEndian, value) { Struct.#pack_string(view, offset, size, value.slice(0, size)) }
+    static unpack_s(view, offset, size, littleEndian) { return Struct.#unpack_string(view, offset, size) }
+    static sizeof_p(count) { return { reps: 1, size: count } }
+    static pack_p(view, offset, size, littleEndian, value) { Struct.#pack_pascal(view, offset, size, value.slice(0, size - 1)) }
+    static unpack_p(view, offset, size, littleEndian) { return Struct.#unpack_pascal(view, offset, size) }
+
+    size = 0;
+    #tokens = [];
+    #littleEndian = false;
+
+    constructor(format) {
+        this.format = format
+
+        let match = Struct.#re_format.exec(format)
+        if (!match) { throw new StructError("Invalid format string") }
+
+        this.#littleEndian = '<' === match[1]
+
+        while (match = Struct.#re_token.exec(format)) {
+            let [count, format] = match.slice(1);
+            count = count ? parseInt(count, 10) : 1;
+            format = format == '?' ? '0' : format;
+
+            const {reps, size} = Struct[`sizeof_${format}`](count);
+            const [pack, unpack] = [Struct[`pack_${format}`], Struct[`unpack_${format}`]];
+
+            for (let i = 0; i < reps; ++i, this.size += size) {
+                if (pack) this.#tokens.push({ pack, unpack, offset: this.size, size })
             }
         }
     }
 
-    const unpack_from = (buffer, offset) => {
-        if (buffer.byteLength < (offset|0) + size) { throw error_buffer }
-        let view = new DataView(buffer, offset|0)
-        return format_handlers.map(token_handlers => token_handlers.unpack(view))
+    unpack_from(buffer, offset) {
+        if (buffer.byteLength < (offset || 0) + this.size) {
+            throw new StructError("Structure larger than remaining buffer")
+        }
+        const view = new DataView(buffer, offset || 0)
+        return this.#tokens.map(token => token.unpack(view, token.offset, token.size, this.#littleEndian))
     }
-    const pack_into = (buffer, offset, ...values) => {
-        if (values.length < format_handlers.length) { throw error_values }
-        if (buffer.byteLength < offset + size) { throw error_buffer }
+
+    pack_into(buffer, offset, ...values) {
+        if (values.length < this.#tokens.length) {
+            throw new StructError("Not enough values for structure")
+        }
+        if (buffer.byteLength < offset + this.size) {
+            throw new StructError("Structure larger than remaining buffer")
+        }
         const view = new DataView(buffer, offset)
-        new Uint8Array(buffer, offset, size).fill(0)
-        format_handlers.forEach((token_handlers, index) => token_handlers.pack(view, values[index]))
+        new Uint8Array(buffer, offset, this.size).fill(0)
+        this.#tokens.forEach((token, index) => token.pack(view, token.offset, token.size, this.#littleEndian, values[index]))
     }
-    const pack = (...values) => {
-        let buffer = new ArrayBuffer(size)
-        pack_into(buffer, 0, ...values)
+
+    pack(...values) {
+        const buffer = new ArrayBuffer(this.size)
+        this.pack_into(buffer, 0, ...values)
         return buffer
     }
-    const unpack = buffer => unpack_from(buffer, 0)
-    function* iter_unpack(buffer) { 
-        for (let offset = 0; offset + size <= buffer.byteLength; offset += size) {
-            yield unpack_from(buffer, offset);
+
+    unpack(buffer) {
+        return this.unpack_from(buffer, 0)
+    }
+
+    *iter_unpack(buffer) {
+        for (let offset = 0; offset + this.size <= buffer.byteLength; offset += this.size) {
+            yield this.unpack_from(buffer, offset);
         }
     }
-    return Object.freeze({
-        unpack, pack, unpack_from, pack_into, iter_unpack, format, size})
 }
