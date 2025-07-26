@@ -122,20 +122,38 @@ class NxdtUsb {
 class NxdtTransfer {
     constructor(name, size) {
         this.dialog = document.getElementById("transfer")
-        this.title = this.dialog.querySelector('#name')
-        this.progress = this.dialog.querySelector('progress')
+        this.title = this.dialog.querySelector('#transfer-name')
+        this.perc = this.dialog.querySelector('#transfer-perc')
+        this.time = this.dialog.querySelector('#transfer-time')
+        this.progress = this.dialog.querySelector('#transfer-progress')
 
+        this.start = Date.now()
         this.title.innerText = name;
         this.progress.value = 0;
         this.progress.max = size;
+        this.update(0)
+        this.time.innerText = 'estimating…'
     }
 
     show() {
         this.dialog.showModal()
     }
 
+    formatTime(sec) {
+        if (sec < 60) return `${Math.round(sec)} sec`;
+        sec /= 60;
+        if (sec < 60) return `${Math.round(sec)} min`
+        return `${Math.round(sec)} h`
+    }
+
     update(increment) {
         this.progress.value += increment
+        const perc = this.progress.value / this.progress.max
+        this.perc.innerText = `${Math.round(perc * 100)} %`
+        const elapsedTime = Date.now() - this.start;
+        if ( elapsedTime < 2000) return;
+        const remaindTime = (elapsedTime / perc) * (1 - perc)
+        this.time.innerText = this.formatTime(remaindTime / 1000)
     }
 
     close() {
@@ -143,20 +161,29 @@ class NxdtTransfer {
     }
 }
 
+function showToast(message) {
+    console.info(`Notification: ${message}`)
+    if (Notification.permission == 'granted') {
+        notify_button.querySelector('.value').innerText = 'Enabled'
+        notify_button.disabled = true;
+
+        new Notification(document.title, {body: message})
+    } else {
+        notify_button.querySelector('.value').innerText = 'Disabled'
+        notify_button.disabled = false;
+
+        const toast = document.getElementById('toast')
+        toast.innerText = message
+        if (toast.cancel) clearTimeout(toast.cancel)
+        toast.togglePopover(true)
+        toast.cancel = setTimeout(() => toast.togglePopover(false), 2000)
+    }
+}
+
 class NxdtSession {
     constructor(dir, usb) {
-        return this.setup(dir, usb).then(() => this)
-    }
-
-    async setup(dir, usb) {
         this.dir = dir
         this.usb = usb
-
-        var cmd_header, cmd_id, cmd_block_length, cmd_block
-        cmd_header = await this.getCmdHeader();
-        [cmd_id, cmd_block_length] = await this.parseCmdHeader(cmd_header);
-        cmd_block = await this.getCmdBlock(cmd_block_length);
-        await this.handleSessionCmd(cmd_id, cmd_block)
     }
 
     async sendStatus(code) {
@@ -253,9 +280,11 @@ class NxdtSession {
                 await this.handleFileTransfer(file, file_size)
             }
         } finally {
-            this.transfer.close()
             await file.close()
+            this.transfer.close()
         }
+
+        showToast("Transfer successful")
     }
 
     async parseFileHeader(cmd_id, cmd_block) {
@@ -382,7 +411,7 @@ class NxdtSession {
     }
 
     async handleCancelCmd(cmd_id, cmd_block) {
-        if (cmd_id == NXDT.COMMAND.CANCEL_FILE_TRANSFER || cmd_block.byteLength != 0) {
+        if (cmd_id != NXDT.COMMAND.CANCEL_FILE_TRANSFER || cmd_block.byteLength != 0) {
             await this.sendStatus(NXDT.STATUS.MALFORMED_CMD)
         }
 
@@ -420,21 +449,23 @@ class NxdtSession {
         this.transfer.show()
         try {
             await this.handleFsTransfer(extracted_fs_size)
+
+            // FS end
+            var cmd_header, cmd_id, cmd_block_length, cmd_block
+            cmd_header = await this.getCmdHeader();
+            [cmd_id, cmd_block_length] = await this.parseCmdHeader(cmd_header);
+            cmd_block = await this.getCmdBlock(cmd_block_length);
+
+            if (cmd_id == NXDT.COMMAND.CANCEL_FILE_TRANSFER) {
+                await this.handleCancelCmd(cmd_id, cmd_block)
+            }
+
+            await this.handleEndFsCmd(cmd_id, cmd_block)
         } finally {
             this.transfer.close()
         }
 
-        // FS end
-        var cmd_header, cmd_id, cmd_block_length, cmd_block
-        cmd_header = await this.getCmdHeader();
-        [cmd_id, cmd_block_length] = await this.parseCmdHeader(cmd_header);
-        cmd_block = await this.getCmdBlock(cmd_block_length);
-
-        if (cmd_id == NXDT.COMMAND.CANCEL_FILE_TRANSFER) {
-            await this.handleCancelCmd(cmd_id, cmd_block)
-        }
-
-        await this.handleEndFsCmd(cmd_id, cmd_block)
+        showToast("Transfer successful")
     }
 
     async handleFsTransfer(extracted_fs_size) {
@@ -535,12 +566,13 @@ class NxdtSession {
                 if (!(e instanceof NxdtInterrupted)) {
                     throw e
                 }
+
+                showToast("Transfer interrupted")
             }
         }
     }
 
     async handleSessionCmd(cmd_id, cmd_block) {
-        await this.parseSessionHeader(cmd_id, cmd_block)
 
         var cmd_header, cmd_block_length
 
@@ -595,38 +627,78 @@ async function makeFile(dir, filename) {
 }
 
 async function requestDirectory() {
+    const block = document.getElementById("block")
+    block.showModal()
     try {
         globalThis.directory = await window.showDirectoryPicker({ mode: "readwrite" })
     } catch (e) {
         return
+    } finally {
+        block.close()
     }
 
     connect_button.disabled = false;
     directory_button.querySelector(".value").innerText = globalThis.directory.name;
-    console.debug('Successfully selected output directory!')
 }
 
 async function requestDevice() {
+    const block = document.getElementById("block")
+    block.showModal()
     try {
         usbDev = await navigator.usb.requestDevice({ filters: [{ vendorId: NXDT.DEVICE.vendorId, productId: NXDT.DEVICE.productId }] });
     } catch (e) {
         return
+    } finally {
+        block.close()
     }
 
     try {
         globalThis.usb = await new NxdtUsb(usbDev);
+        await globalThis.usb.open()
     } catch (e) {
-        await usbDev.forget()
-        return
+        showToast("Device unavailable")
+        throw e
     }
 
-    await globalThis.usb.open()
+    const session = new NxdtSession(globalThis.directory, globalThis.usb)
+    
+    try {
+        var cmd_header, cmd_id, cmd_block_length, cmd_block
+        cmd_header = await session.getCmdHeader();
+        [cmd_id, cmd_block_length] = await session.parseCmdHeader(cmd_header);
+        cmd_block = await session.getCmdBlock(cmd_block_length);
+        
+        await session.parseSessionHeader(cmd_id, cmd_block)
+    } catch (e) {
+        showToast("Device incompatible")
+        await usbDev.forget()
+        throw e
+    }
+        
     connect_button.querySelector('.value').innerText = `${globalThis.usb.device.productName} (${globalThis.usb.device.serialNumber})`
     try {
-        await new NxdtSession(globalThis.directory, globalThis.usb)
+        await session.handleSessionTransfer()
+    } catch (e) {
+        showToast("Connection interrupted")
     } finally {
         await globalThis.usb.close()
         connect_button.querySelector('.value').innerText = 'Not connected'
+    }
+}
+
+async function requestNotify() {
+    const block = document.getElementById("block")
+    block.showModal()
+    try {
+        await Notification.requestPermission()
+    } finally {
+        block.close()
+    }
+    if (Notification.permission == 'granted') {
+        notify_button.querySelector('.value').innerText = 'Enabled'
+        notify_button.disabled = true;
+    } else {
+        showToast("Notifications denied")
     }
 }
 
@@ -637,6 +709,7 @@ const notify_button = document.getElementById("notify");
 
 connect_button.addEventListener("click", requestDevice)
 directory_button.addEventListener("click", requestDirectory)
+notify_button.addEventListener("click", requestNotify)
 
 
 const fs_supported = window?.showDirectoryPicker;
@@ -651,8 +724,10 @@ if (!fs_supported || !usb_supported) {
 }
 
 
-if (Notification.permission == "granted") { }
-
+if (Notification.permission == "granted") {
+    notify_button.querySelector('.value').innerText = 'Enabled'
+    notify_button.disabled = true;
+}
 
 // Highly modified https://github.com/lyngklip/structjs
 

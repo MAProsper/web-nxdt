@@ -24,18 +24,33 @@
                     <div class="value">Disabled</div>
                 </button></li>
             <li aria-hidden="true">
-                <small id="notify-info">Notify when transfers are done or device disconnects.</small>
+                <small id="notify-info">Notify when transfers or device changes state.</small>
             </li>
         </ul>
     </main>
     <dialog id="transfer" closedby="none">
-        <p>Transfering: <span id="name">File name</span></p>
-        <progress id="bar" value="0" max="0"></progress>
+        <p>
+            Transferring…
+            <small id="transfer-name">Name</small>
+        </p>
+        <div id="transfer-bar">
+            <small role="presentation" id="transfer-spin"></small>
+            <progress id="transfer-progress" value="0" max="0"></progress>
+            <small id="transfer-perc">0 %</small>
+        </div>
+        <small>Time remaining: <span id="transfer-time">estimating…</span></small>
     </dialog>
     <dialog id="browser" closedby="none">
         <p>Your browser is not supported!</p>
         <small>Try a chromium-based browser insted.</small>
     </dialog>
+    <dialog id="block" closedby="none">
+        <p>
+            Waiting for request…
+            <small role="presentation" id="transfer-spin"></small>
+        </p>
+    </dialog>
+    <div id="toast" popover>Notification</div>
     <footer>
         <div>NXDumpTool by DarkMatterCore</div>
         <div>Web-NXDT by MAProsper</div>
