@@ -671,7 +671,7 @@ class Struct {
     static sizeof_c(count) { return { reps: count, size: 1 } }
     static pack_c(view, offset, size, littleEndian, value) { Struct.#pack_string(view, offset, 1, value) }
     static unpack_c(view, offset, size, littleEndian) { return Struct.#unpack_string(view, offset, 1) }
-    static sizeof_1(count) { return { reps: count, size: 1 } }
+    static sizeof_0(count) { return { reps: count, size: 1 } }
     static pack_0(view, offset, size, littleEndian, value) { view.setUint8(offset, value) }
     static unpack_0(view, offset, size, littleEndian) { return view.getInt8(offset) }
     static sizeof_b(count) { return { reps: count, size: 1 } }
