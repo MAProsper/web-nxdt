@@ -85,7 +85,7 @@ class NxdtUsb {
 
     async open() {
         await this.device.open()
-        await this.device.reset()
+        try { await this.device.reset() } catch (e) {}
         await this.device.claimInterface(this.interface)
     }
 
@@ -751,9 +751,6 @@ const directoryButton = document.getElementById("directory");
 const deviceButton = document.getElementById("device");
 const notifyButton = document.getElementById("notify");
 
-const deviceRules = document.getElementById("device-rules");
-deviceRules.innerText = `SUBSYSTEM=="usb", ATTRS{idVendor}=="${NXDT.DEVICE.vendorId.toString(16).padStart(4, "0")}", ATTRS{idProduct}=="${NXDT.DEVICE.productId.toString(16).padStart(4, "0")}", TAG+="uaccess"`
-
 directoryButton.addEventListener("click", requestDirectory)
 deviceButton.addEventListener("click", requestDevice)
 notifyButton.addEventListener("click", requestNotify)
@@ -761,6 +758,18 @@ notifyButton.addEventListener("click", requestNotify)
 
 const fsSupported = window?.showDirectoryPicker;
 const usbSupported = navigator?.usb?.requestDevice;
+const platform = navigator?.userAgentData?.platform;
+
+const deviceInfo = document.getElementById("device-info");
+const platformInfo = deviceInfo.querySelector(`[data-platform=${platform}]`);
+
+if (platform == "Linux") {
+    const deviceRules = platformInfo.querySelector(".value");
+    deviceRules.innerText = `SUBSYSTEM=="usb", ATTRS{idVendor}=="${NXDT.DEVICE.vendorId.toString(16).padStart(4, "0")}", ATTRS{idProduct}=="${NXDT.DEVICE.productId.toString(16).padStart(4, "0")}", TAG+="uaccess"`
+}
+
+if (platformInfo) platformInfo.hidden = false;
+
 
 console.debug(`WebUSB API support: ${usbSupported ? 'Yes' : 'No'}`)
 console.debug(`File System API support: ${fsSupported ? 'Yes' : 'No'}`)

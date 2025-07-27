@@ -21,8 +21,13 @@
                 </button></li>
             <li aria-hidden="true">
                 <small id="device-info">
-                    Linux (udev) systems require creating <code>/etc/udev/rules.d/70-nxdt.rules</code> with the following:
-                    <code id="device-rules">Generating…</code>
+                    <span data-platform="Linux" hidden>
+                        Linux systems require creating <code>/etc/udev/rules.d/70-nxdt.rules</code> with the following:
+                        <code class="value">Generating…</code>
+                    </span>
+                    <span data-platform="Windows" hidden>
+                        Windows systems require installing WinUSB, which can be obtained by Zadig. Device might need manual reset if unable to connect.
+                    </span>
                 </small>
             </li>
             <li><button id="notify" class="inline" aria-describedby="notify-info">
@@ -57,7 +62,7 @@
     </dialog>
     <dialog id="support" closedby="none">
         <p>Your configuration is not supported!</p>
-        <small>Try a chromium-based browser on a non-Windows device.</small>
+        <small>Try a chromium-based browser on a desktop device.</small>
     </dialog>
     <div id="toast" popover="manual">Notification</div>
     <footer>

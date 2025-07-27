@@ -13,9 +13,6 @@
     --highlight-light: #72EBF6;
     --selector-color: #324ff1;
     --hover-color: #e3e3e3;
-    font-family: sans;
-    color: var(--text-color);
-    cursor: default;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -40,6 +37,12 @@
     100% {
         --highlight-color: var(--highlight-light);
     }
+}
+
+body {
+    font-family: sans-serif;
+    color: var(--text-color);
+    cursor: default;
 }
 
 :focus {
