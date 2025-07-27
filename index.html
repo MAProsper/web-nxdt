@@ -11,46 +11,55 @@
     <header>Web-NXDT - NXDumpTool (host)</header>
     <main>
         <ul>
-            <li><button id="dst">
-                    <div>Destination directory</div>
-                    <div class="value">Not selected</div>
+            <li><button id="directory" class="inline">
+                    <span>Destination directory</span>
+                    <span class="value">Not selected</span>
                 </button></li>
-            <li><button id="src" disabled>
-                    <div>Source device</div>
-                    <div class="value">Not connected</div>
-                </button></li>
-            <li><button id="notify" aria-describedby="notify-info">
-                    <div>Notifications</div>
-                    <div class="value">Disabled</div>
+            <li><button id="device" class="inline" aria-describedby="device-info" disabled>
+                    <span>Source device</span>
+                    <dspaniv class="value">Not connected</span>
                 </button></li>
             <li aria-hidden="true">
-                <small id="notify-info">Notify when transfers or device changes state.</small>
+                <small id="device-info">
+                    Linux (udev) systems require creating <code>/etc/udev/rules.d/70-nxdt.rules</code> with the following:
+                    <code id="device-rules">Generating…</code>
+                </small>
+            </li>
+            <li><button id="notify" class="inline" aria-describedby="notify-info">
+                    <span>System notifications</span>
+                    <span class="value">Disabled</span>
+                </button></li>
+            <li aria-hidden="true">
+                <small id="notify-info">Use system notifications, insted of in-app toasts, for transfers or device state changes.</small>
             </li>
         </ul>
     </main>
     <dialog id="transfer" closedby="none">
         <p>
             Transferring…
-            <small id="transfer-name">Name</small>
+            <small class="value">Name</small>
         </p>
-        <div id="transfer-bar">
-            <small role="presentation" id="transfer-spin"></small>
-            <progress id="transfer-progress" value="0" max="0"></progress>
-            <small id="transfer-perc">0 %</small>
+        <div role="presentation" class="inline">
+            <small class="progress-spinner" aria-hidden="true"></small>
+            <progress value="0" max="0" aria-labelledby="transfer-progress"></progress>
+            <small id="transfer-progress" aria-hidden="true">0 %</small>
         </div>
         <small>Time remaining: <span id="transfer-time">estimating…</span></small>
     </dialog>
-    <dialog id="browser" closedby="none">
-        <p>Your browser is not supported!</p>
-        <small>Try a chromium-based browser insted.</small>
-    </dialog>
-    <dialog id="block" closedby="none">
+    <dialog id="blocker" closedby="none">
         <p>
-            Waiting for request…
-            <small role="presentation" id="transfer-spin"></small>
+            Requesting…
+            <small class="value">Action</small>
         </p>
+        <div role="presentation" >
+            <small aria-hidden="true" class="progress-spinner"></small>
+        </div>
     </dialog>
-    <div id="toast" popover>Notification</div>
+    <dialog id="support" closedby="none">
+        <p>Your configuration is not supported!</p>
+        <small>Try a chromium-based browser on a non-Windows device.</small>
+    </dialog>
+    <div id="toast" popover="manual">Notification</div>
     <footer>
         <div>NXDumpTool by DarkMatterCore</div>
         <div>Web-NXDT by MAProsper</div>

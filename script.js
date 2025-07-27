@@ -122,17 +122,20 @@ class NxdtUsb {
 class NxdtTransfer {
     constructor(name, size) {
         this.dialog = document.getElementById("transfer")
-        this.title = this.dialog.querySelector('#transfer-name')
-        this.perc = this.dialog.querySelector('#transfer-perc')
-        this.time = this.dialog.querySelector('#transfer-time')
-        this.progress = this.dialog.querySelector('#transfer-progress')
 
-        this.start = Date.now()
-        this.title.innerText = name;
-        this.progress.value = 0;
-        this.progress.max = size;
+        this.name = this.dialog.querySelector('.value')
+        this.progess = this.dialog.querySelector('progress')
+        this.progressLabel = this.dialog.querySelector('#transfer-progress')
+        this.progressTime = this.dialog.querySelector('#transfer-time')
+
+        this.name.innerText = name;
+
+        this.progess.value = 0;
+        this.progess.max = size;
+        
         this.update(0)
-        this.time.innerText = 'estimating…'
+        
+        this.start = Date.now()
     }
 
     show() {
@@ -147,13 +150,20 @@ class NxdtTransfer {
     }
 
     update(increment) {
-        this.progress.value += increment
-        const perc = this.progress.value / this.progress.max
-        this.perc.innerText = `${Math.round(perc * 100)} %`
+        this.progess.value += increment
+
+        const perc = this.progess.value / this.progess.max
+        this.progressLabel.innerText = `${Math.round(perc * 100)} %`
+
         const elapsedTime = Date.now() - this.start;
-        if ( elapsedTime < 2000) return;
-        const remaindTime = (elapsedTime / perc) * (1 - perc)
-        this.time.innerText = this.formatTime(remaindTime / 1000)
+
+        if (elapsedTime < 2000) {
+            this.progressTime.innerText = 'estimating…'
+        } else {
+            const remaindTime = (elapsedTime / perc) * (1 - perc)
+            this.progressTime.innerText = this.formatTime(remaindTime / 1000)
+        }
+
     }
 
     close() {
@@ -164,13 +174,13 @@ class NxdtTransfer {
 function showToast(message) {
     console.info(`Notification: ${message}`)
     if (Notification.permission == 'granted') {
-        notify_button.querySelector('.value').innerText = 'Enabled'
-        notify_button.disabled = true;
+        notifyButton.querySelector('.value').innerText = 'Enabled'
+        notifyButton.disabled = true;
 
         new Notification(document.title, {body: message})
     } else {
-        notify_button.querySelector('.value').innerText = 'Disabled'
-        notify_button.disabled = false;
+        notifyButton.querySelector('.value').innerText = 'Disabled'
+        notifyButton.disabled = false;
 
         const toast = document.getElementById('toast')
         toast.innerText = message
@@ -627,31 +637,45 @@ async function makeFile(dir, filename) {
 }
 
 async function requestDirectory() {
-    const block = document.getElementById("block")
-    block.showModal()
+    const blocker = new NxdtBlocker("Destination directory")
+    blocker.open()
     try {
         globalThis.directory = await window.showDirectoryPicker({ mode: "readwrite" })
     } catch (e) {
         return
     } finally {
-        block.close()
+        blocker.close()
     }
 
-    connect_button.disabled = false;
-    directory_button.querySelector(".value").innerText = globalThis.directory.name;
+    deviceButton.disabled = false;
+    directoryButton.querySelector(".value").innerText = globalThis.directory.name;
+
+    navigator.usb.addEventListener("connect", async (event) => {
+        await setupDevice(event.device)
+    })
+
+    const usbDev = await getDevice()
+    if (usbDev) await setupDevice(usbDev)
 }
 
 async function requestDevice() {
-    const block = document.getElementById("block")
-    block.showModal()
+    const blocker = new NxdtBlocker("Source device")
+    blocker.open()
+    var usbDev
     try {
         usbDev = await navigator.usb.requestDevice({ filters: [{ vendorId: NXDT.DEVICE.vendorId, productId: NXDT.DEVICE.productId }] });
-    } catch (e) {
-        return
     } finally {
-        block.close()
+        blocker.close()
     }
 
+    await setupDevice(usbDev)
+}
+
+async function getDevice() {
+    return (await navigator.usb.getDevices()).find(dev => dev.vendorId == NXDT.DEVICE.vendorId && dev.productId == NXDT.DEVICE.productId)
+}
+
+async function setupDevice(usbDev) {
     try {
         globalThis.usb = await new NxdtUsb(usbDev);
         await globalThis.usb.open()
@@ -671,62 +695,85 @@ async function requestDevice() {
         await session.parseSessionHeader(cmd_id, cmd_block)
     } catch (e) {
         showToast("Device incompatible")
-        await usbDev.forget()
+        await globalThis.usb.device.forget()
+        delete globalThis.usb
         throw e
     }
-        
-    connect_button.querySelector('.value').innerText = `${globalThis.usb.device.productName} (${globalThis.usb.device.serialNumber})`
+
+    deviceButton.querySelector('.value').innerText = `${globalThis.usb.device.productName} (${globalThis.usb.device.serialNumber})`
     try {
         await session.handleSessionTransfer()
     } catch (e) {
         showToast("Connection interrupted")
     } finally {
         await globalThis.usb.close()
-        connect_button.querySelector('.value').innerText = 'Not connected'
+        delete globalThis.usb
+        deviceButton.querySelector('.value').innerText = 'Not connected'
+    }
+}
+
+class NxdtBlocker {
+    constructor(name) {
+        this.dialog = document.getElementById("blocker")
+        this.name = this.dialog.querySelector(".value")
+
+        this.name.innerText = name
+    }
+
+    open() {
+        this.dialog.showModal()
+    }
+
+    close() {
+        this.dialog.close()
     }
 }
 
 async function requestNotify() {
-    const block = document.getElementById("block")
-    block.showModal()
+    const blocker = new NxdtBlocker("Notification permission")
+    blocker.open()
     try {
         await Notification.requestPermission()
     } finally {
-        block.close()
+        blocker.close()
     }
+
     if (Notification.permission == 'granted') {
-        notify_button.querySelector('.value').innerText = 'Enabled'
-        notify_button.disabled = true;
+        notifyButton.querySelector('.value').innerText = 'Enabled'
+        notifyButton.disabled = true;
     } else {
         showToast("Notifications denied")
     }
 }
 
 
-const connect_button = document.getElementById("src");
-const directory_button = document.getElementById("dst");
-const notify_button = document.getElementById("notify");
+const directoryButton = document.getElementById("directory");
+const deviceButton = document.getElementById("device");
+const notifyButton = document.getElementById("notify");
 
-connect_button.addEventListener("click", requestDevice)
-directory_button.addEventListener("click", requestDirectory)
-notify_button.addEventListener("click", requestNotify)
+const deviceRules = document.getElementById("device-rules");
+deviceRules.innerText = `SUBSYSTEM=="usb", ATTRS{idVendor}=="${NXDT.DEVICE.vendorId.toString(16).padStart(4, "0")}", ATTRS{idProduct}=="${NXDT.DEVICE.productId.toString(16).padStart(4, "0")}", TAG+="uaccess"`
+
+directoryButton.addEventListener("click", requestDirectory)
+deviceButton.addEventListener("click", requestDevice)
+notifyButton.addEventListener("click", requestNotify)
 
 
-const fs_supported = window?.showDirectoryPicker;
-const usb_supported = navigator?.usb?.requestDevice;
+const fsSupported = window?.showDirectoryPicker;
+const usbSupported = navigator?.usb?.requestDevice;
 
-console.debug(`WebUSB API support: ${usb_supported ? 'Yes' : 'No'}`)
-console.debug(`File System API support: ${fs_supported ? 'Yes' : 'No'}`)
+console.debug(`WebUSB API support: ${usbSupported ? 'Yes' : 'No'}`)
+console.debug(`File System API support: ${fsSupported ? 'Yes' : 'No'}`)
 
-if (!fs_supported || !usb_supported) {
-    const browser_dialog = document.getElementById("browser");
-    browser_dialog.showModal()
+if (!fsSupported || !usbSupported) {
+    const supportDialog = document.getElementById("support");
+    supportDialog.showModal()
 }
 
 
 if (Notification.permission == "granted") {
-    notify_button.querySelector('.value').innerText = 'Enabled'
-    notify_button.disabled = true;
+    notifyButton.querySelector('.value').innerText = 'Enabled'
+    notifyButton.disabled = true;
 }
 
 // Highly modified https://github.com/lyngklip/structjs
