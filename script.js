@@ -304,16 +304,15 @@ class NxdtSession {
         }
 
         // Parse command block.
-        const [raw_file_size, filename_length, nsp_header_size] = new Struct('<QII').unpack_from(cmd_block, 0)
+        const [file_size, filename_length, nsp_header_size] = new Struct('<QII').unpack_from(cmd_block, 0)
         const filename = new Struct(`<${filename_length}s`).unpack_from(cmd_block, 16)[0]
-        const file_size = Number(raw_file_size)
 
         // Print info.
-        console.debug(`File size: ${raw_file_size} | Filename length: ${filename_length} | NSP header size: ${nsp_header_size}.`)
+        console.debug(`File size: ${file_size} | Filename length: ${filename_length} | NSP header size: ${nsp_header_size}.`)
         console.info(`Receiving file: ${filename}`)
 
         // Perform sanity checks.
-        if (raw_file_size > BigInt(Number.MAX_SAFE_INTEGER)) {
+        if (file_size > Number.MAX_SAFE_INTEGER) {
             await this.sendStatus(NXDT.STATUS.HOST_IO_ERROR)
         }
 
@@ -793,18 +792,13 @@ class Struct {
     static #re_token = /([1-9]\d*)?([xcbB?hHiIlLqQefdsp])/g
     static #re_format = /^([<>])?(([1-9]\d*)?([xcbB?hHiIlLqQefdsp]))*$/
 
-    static #unpack_string(view, offset, size) { return String.fromCharCode(...new Uint8Array(view.buffer, view.byteOffset + offset, size)) }
-    static #pack_string(view, offset, size, value) { new Uint8Array(view.buffer, view.byteOffset + offset, size).set(value.split('').map(str => str.charCodeAt(0))) }
-    static #unpack_pascal(view, offset, size) { return Struct.#unpack_string(view, offset + 1, Math.min(view.getUint8(offset), size - 1)) }
-    static #pack_pascal(view, offset, size, value) { view.setUint8(offset, value.length); Struct.#pack_string(view, offset + 1, size - 1, value) }
-
     static sizeof_x(count) { return { reps: 1, size: count } }
     static sizeof_c(count) { return { reps: count, size: 1 } }
-    static pack_c(view, offset, size, littleEndian, value) { Struct.#pack_string(view, offset, 1, value) }
-    static unpack_c(view, offset, size, littleEndian) { return Struct.#unpack_string(view, offset, 1) }
-    static sizeof_0(count) { return { reps: count, size: 1 } }
-    static pack_0(view, offset, size, littleEndian, value) { view.setUint8(offset, value) }
-    static unpack_0(view, offset, size, littleEndian) { return view.getInt8(offset) }
+    static pack_c(view, offset, size, littleEndian, value) { Struct.pack_s(view, offset, 1, value) }
+    static unpack_c(view, offset, size, littleEndian) { return Struct.unpack_s(view, offset, 1) }
+    static sizeof_bool(count) { return { reps: count, size: 1 } }
+    static pack_bool(view, offset, size, littleEndian, value) { view.setUint8(offset, Boolean(value)) }
+    static unpack_bool(view, offset, size, littleEndian) { return Boolean(view.getInt8(offset)) }
     static sizeof_b(count) { return { reps: count, size: 1 } }
     static pack_b(view, offset, size, littleEndian, value) { view.setInt8(offset, value) }
     static unpack_b(view, offset, size, littleEndian) { return view.getInt8(offset) }
@@ -832,9 +826,15 @@ class Struct {
     static sizeof_q(count) { return { reps: count, size: 8 } }
     static pack_q(view, offset, size, littleEndian, value) { view.setBigInt64(offset, value, littleEndian) }
     static unpack_q(view, offset, size, littleEndian) { return view.getBigInt64(offset, littleEndian) }
+    static sizeof_qn(count) { return Struct.sizeof_q(count) }
+    static pack_qn(view, offset, size, littleEndian, value) { Struct.pack_q(view, offset, size, littleEndian, BigInt(value)) }
+    static unpack_qn(view, offset, size, littleEndian) { return Number(Struct.unpack_q(view, offset, size, littleEndian)) }
     static sizeof_Q(count) { return { reps: count, size: 8 } }
     static pack_Q(view, offset, size, littleEndian, value) { view.setBigUint64(offset, value, littleEndian) }
     static unpack_Q(view, offset, size, littleEndian) { return view.getBigUint64(offset, littleEndian) }
+    static sizeof_Qn(count) { return Struct.sizeof_Q(count) }
+    static pack_Qn(view, offset, size, littleEndian, value) { Struct.pack_Q(view, offset, size, littleEndian, BigInt(value)) }
+    static unpack_Qn(view, offset, size, littleEndian) { return Number(Struct.unpack_Q(view, offset, size, littleEndian)) }
     static sizeof_e(count) { return { reps: count, size: 2 } }
     static pack_e(view, offset, size, littleEndian, value) { view.setFloat16(offset, value, littleEndian) }
     static unpack_e(view, offset, size, littleEndian) { return view.getFloat16(offset, littleEndian) }
@@ -845,18 +845,20 @@ class Struct {
     static pack_d(view, offset, size, littleEndian, value) { view.setFloat64(offset, value, littleEndian) }
     static unpack_d(view, offset, size, littleEndian) { return view.getFloat64(offset, littleEndian) }
     static sizeof_s(count) { return { reps: 1, size: count } }
-    static pack_s(view, offset, size, littleEndian, value) { Struct.#pack_string(view, offset, size, value.slice(0, size)) }
-    static unpack_s(view, offset, size, littleEndian) { return Struct.#unpack_string(view, offset, size) }
+    static pack_s(view, offset, size, littleEndian, value) { new Uint8Array(view.buffer, view.byteOffset + offset, size).set(value.split('').map(str => str.charCodeAt(0))) }
+    static unpack_s(view, offset, size, littleEndian) { return String.fromCharCode(...new Uint8Array(view.buffer, view.byteOffset + offset, size)) }
     static sizeof_p(count) { return { reps: 1, size: count } }
-    static pack_p(view, offset, size, littleEndian, value) { Struct.#pack_pascal(view, offset, size, value.slice(0, size - 1)) }
-    static unpack_p(view, offset, size, littleEndian) { return Struct.#unpack_pascal(view, offset, size) }
+    static pack_p(view, offset, size, littleEndian, value) { view.setUint8(offset, value.length); Struct.pack_s(view, offset + 1, size - 1, value) }
+    static unpack_p(view, offset, size, littleEndian) { return Struct.unpack_s(view, offset + 1, Math.min(view.getUint8(offset), size - 1)) }
 
     size = 0;
     #tokens = [];
     #littleEndian = false;
+    #map = {'?': 'bool', 'q': 'qn', 'Q': 'Qn'};
 
-    constructor(format) {
+    constructor(format, map) {
         this.format = format
+        Object.assign(this.#map, map)
 
         let match = Struct.#re_format.exec(format)
         if (!match) { throw new StructError("Invalid format string") }
@@ -866,7 +868,7 @@ class Struct {
         while (match = Struct.#re_token.exec(format)) {
             let [count, format] = match.slice(1);
             count = count ? parseInt(count, 10) : 1;
-            format = format == '?' ? '0' : format;
+            format = this.#map[format] || format;
 
             const {reps, size} = Struct[`sizeof_${format}`](count);
             const [pack, unpack] = [Struct[`pack_${format}`], Struct[`unpack_${format}`]];
@@ -889,7 +891,7 @@ class Struct {
         if (values.length < this.#tokens.length) {
             throw new StructError("Not enough values for structure")
         }
-        if (buffer.byteLength < offset + this.size) {
+        if (buffer.byteLength < (offset || 0) + this.size) {
             throw new StructError("Structure larger than remaining buffer")
         }
         const view = new DataView(buffer, offset)
