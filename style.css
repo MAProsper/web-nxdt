@@ -53,6 +53,13 @@ body {
     outline-color: var(--highlight-color);
 }
 
+.inline {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
 /* Generic elements */
 body,
 dialog {
@@ -94,21 +101,6 @@ dialog:focus {
     outline: none;
 }
 
-#transfer-progress {
-    white-space: nowrap;
-}
-
-.progress-spinner {
-    display: inline-block;
-    font-size: 0.2em;
-    width: 1em;
-    height: 1em;
-    margin: 2.5em;
-    border-radius: 50%;
-    animation: spinner 1s infinite ease;
-}
-
-
 /* Based on https://cssloaders.github.io/ */
 @keyframes spinner {
 
@@ -144,6 +136,16 @@ dialog:focus {
     87.5% {
         box-shadow: 0em -2.5em 0em 0em rgba(255, 255, 255, 0.2), 1.8em -1.8em 0 0em rgba(255, 255, 255, 0.2), 2.5em 0em 0 0em rgba(255, 255, 255, 0.2), 1.8em 1.8em 0 0em rgba(255, 255, 255, 0.2), 0em 2.5em 0 0em rgba(255, 255, 255, 0.2), -1.8em 1.8em 0 0em rgba(255, 255, 255, 0.5), -2.5em 0em 0 0em rgba(255, 255, 255, 0.7), -1.8em -1.8em 0 0em rgba(255, 255, 255, 1.0);
     }
+}
+
+.progress-spinner {
+    display: inline-block;
+    font-size: 0.2em;
+    width: 1em;
+    height: 1em;
+    margin: 2.5em;
+    border-radius: 50%;
+    animation: spinner 1s infinite ease;
 }
 
 
@@ -188,13 +190,6 @@ main li {
 main li>* {
     padding: 1rem;
     width: 100%;
-}
-
-.inline {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
 }
 
 main li>small {
@@ -243,4 +238,8 @@ dialog>*:last-child {
 
 dialog::backdrop {
     background-color: rgba(10, 21, 34, 0.75);
+}
+
+#transfer-progress {
+    white-space: nowrap;
 }
