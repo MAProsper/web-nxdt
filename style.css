@@ -61,6 +61,10 @@ dialog {
     background-color: var(--background-color);
 }
 
+a {
+    color: inherit;
+}
+
 small {
     display: block;
     color: #959494;
@@ -104,6 +108,8 @@ dialog:focus {
     animation: spinner 1s infinite ease;
 }
 
+
+/* Based on https://cssloaders.github.io/ */
 @keyframes spinner {
 
     0%,

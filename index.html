@@ -5,41 +5,52 @@
     <meta charset="UTF-8" />
     <title>Web-NXDT client</title>
     <link href="style.css" rel="stylesheet" />
+    <script defer src="script.js"></script>
 </head>
 
 <body>
-    <header>Web-NXDT - NXDumpTool (host)</header>
-    <main>
-        <ul>
-            <li><button id="directory" class="inline">
-                    <span>Destination directory</span>
-                    <span class="value">Not selected</span>
-                </button></li>
-            <li><button id="device" class="inline" aria-describedby="device-info" disabled>
-                    <span>Source device</span>
-                    <span class="value">Not connected</span>
-                </button></li>
-            <li aria-hidden="true">
-                <small id="device-info">
-                    <span data-platform="Linux" hidden>
-                        Linux systems require creating <code>/etc/udev/rules.d/70-nxdt.rules</code> with the following:
-                        <code class="value">Generating…</code>
-                    </span>
-                    <span data-platform="Windows" hidden>
-                        Windows systems require installing WinUSB, which can be obtained by Zadig. Device might need manual reset if unable to connect.
-                    </span>
-                </small>
-            </li>
-            <li><button id="notify" class="inline" aria-describedby="notify-info">
-                    <span>System notifications</span>
-                    <span class="value">Disabled</span>
-                </button></li>
-            <li aria-hidden="true">
-                <small id="notify-info">Use system notifications, insted of in-app toasts, for transfers or device state changes.</small>
-            </li>
-        </ul>
-    </main>
-    <dialog id="transfer" closedby="none">
+    <div id="app">
+        <header>Web-NXDT - NXDumpTool (host)</header>
+        <main>
+            <ul>
+                <li><button id="directory" class="inline">
+                        <span>Destination directory</span>
+                        <span class="value">Not selected</span>
+                    </button></li>
+                <li><button id="device" class="inline" aria-describedby="device-info" disabled>
+                        <span>Source device</span>
+                        <span class="value">Not connected</span>
+                    </button></li>
+                <li aria-hidden="true">
+                    <small id="device-info">
+                        <span data-platform="Linux" hidden>
+                            Linux systems require creating <code>/etc/udev/rules.d/70-nxdt.rules</code> with the
+                            following:
+                            <code class="value">Generating…</code>
+                        </span>
+                        <span data-platform="Windows" hidden>
+                            Windows systems require installing WinUSB, which can be obtained by <a
+                                href="https://zadig.akeo.ie/">Zadig</a>.
+                            Device might need manual application restart if unable to connect.
+                        </span>
+                    </small>
+                </li>
+                <li><button id="notify" class="inline" aria-describedby="notify-info">
+                        <span>System notifications</span>
+                        <span class="value">Blocked</span>
+                    </button></li>
+                <li aria-hidden="true">
+                    <small id="notify-info">Send notifications when a transfer complete or is interrupted.</small>
+                </li>
+            </ul>
+        </main>
+        <footer>
+            <div><a href="https://github.com/DarkMatterCore/nxdumptool">NXDumpTool</a> by DarkMatterCore</div>
+            <div>Web-NXDT by MAProsper</div>
+        </footer>
+    </div>
+
+    <dialog id="transfer">
         <p>
             Transferring…
             <small class="value">Name</small>
@@ -51,7 +62,7 @@
         </div>
         <small>Time remaining: <span id="transfer-time">estimating…</span></small>
     </dialog>
-    <dialog id="blocker" closedby="none">
+    <dialog id="request">
         <p>
             Requesting…
             <small class="value">Action</small>
@@ -60,16 +71,11 @@
             <small aria-hidden="true" class="progress-spinner"></small>
         </div>
     </dialog>
-    <dialog id="support" closedby="none">
+    <dialog id="support">
         <p>Your configuration is not supported!</p>
         <small>Try a chromium-based browser on a desktop device.</small>
     </dialog>
     <div id="toast" popover="manual">Notification</div>
-    <footer>
-        <div>NXDumpTool by DarkMatterCore</div>
-        <div>Web-NXDT by MAProsper</div>
-    </footer>
-    <script src="script.js"></script>
 </body>
 
 </html>
