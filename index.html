@@ -21,17 +21,21 @@
                         <span>Source device</span>
                         <span class="value">Not connected</span>
                     </button></li>
-                <li aria-hidden="true">
+                <li>
                     <small id="device-info">
-                        <span data-platform="Linux" hidden>
-                            Linux systems require creating <code>/etc/udev/rules.d/70-nxdt.rules</code> with the
-                            following content:
-                            <code class="value">Generating…</code>
-                        </span>
                         <span data-platform="Windows" hidden>
-                            Windows systems require installing WinUSB, which can be obtained by <a
-                                href="https://zadig.akeo.ie/">Zadig</a>.
+                            Windows systems require installing WinUSB,
+                            which can be obtained by <a href="https://zadig.akeo.ie/">Zadig</a>.
                             Device might need manual application restart if unable to connect.
+                        </span>
+                        <span data-platform="Linux" hidden>
+                            Linux systems require creating <code>/etc/udev/rules.d/70-nxdt.rules</code>,
+                            with the following content: <code class="value">Generating…</code>
+                        </span>
+                        <span data-platform="macOS" hidden></span>
+                        <span data-platform="unknown" hidden>
+                            <span class="value">Platform</span> systems have not been tested.
+                            If issues arise, try a mainline system with a properly set user agent.
                         </span>
                     </small>
                 </li>
@@ -39,8 +43,8 @@
                         <span>System notifications</span>
                         <span class="value">Blocked</span>
                     </button></li>
-                <li aria-hidden="true">
-                    <small id="notify-info">Send notifications when a transfer complete or is interrupted.</small>
+                <li>
+                    <small id="notify-info">Send a notification when a transfer is completed or interrupted.</small>
                 </li>
             </ul>
         </main>

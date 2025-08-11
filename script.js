@@ -168,6 +168,10 @@ const NXDT = {
         UNSUPPORTED_ABI_VERSION: 6,
         MALFORMED_CMD: 7,
         HOST_IO_ERROR: 8,
+    },
+    TIME: {
+        TOAST: 2000,
+        TRANSFER_ESTIMATE: 2000
     }
 }
 
@@ -181,6 +185,10 @@ NXDT.STRUCT = {
 
 function hex(value, pad) {
     return value.toString(16).padStart(pad || 0, '0')
+}
+
+function setValueText(e, value) {
+    e.querySelector('.value').innerText = value;
 }
 
 async function makeFile(dir, filePath) {
@@ -298,85 +306,55 @@ class NxdtDialog {
 class NxdtRequest extends NxdtDialog {
     constructor(name) {
         super('request')
-
-        this.name = this.dialog.querySelector('.value');
-        this.name.innerText = name;
-    }
-
-    open() {
-        this.dialog.showModal();
-    }
-
-    close() {
-        this.dialog.close();
+        setValueText(this.dialog, name);
     }
 }
 
 class NxdtTransfer extends NxdtDialog {
-    #estimateTime = 2000;
-
     constructor(name, size) {
         super('transfer')
+        setValueText(this.dialog, name);
 
-        this.name = this.dialog.querySelector('.value');
         this.progess = this.dialog.querySelector('progress');
-        this.progressLabel = this.dialog.querySelector('#transfer-progress');
-        this.progressTime = this.dialog.querySelector('#transfer-time');
-
-        this.start = Date.now();
-        this.name.innerText = name;
 
         this.progess.value = 0;
         this.progess.max = size;
+        this.progressLabel = this.dialog.querySelector('#transfer-progress');
+        this.progressTime = this.dialog.querySelector('#transfer-time');
 
+        this.startTime = Date.now();
         this.update(0);
     }
 
-    show() {
-        this.dialog.showModal();
-    }
-
     #formatTime(sec) {
-        if (sec < 60) return `${Math.round(sec)} sec`;
-        sec /= 60;
-        if (sec < 60) return `${Math.round(sec)} min`;
-        return `${Math.round(sec)} h`;
+        return (sec < 60) ? `${Math.ceil(sec)} sec` : `${Math.ceil(sec / 60)} min`;
     }
 
     update(increment) {
         this.progess.value += increment;
-
         const perc = this.progess.value / this.progess.max;
-        this.progressLabel.innerText = `${Math.round(perc * 100)} %`;
+        this.progressLabel.innerText = `${Math.floor(perc * 100)} %`;
 
-        const elapsedTime = Date.now() - this.start;
-
-        if (elapsedTime < this.#estimateTime) {
+        const elapsedTime = Date.now() - this.startTime;
+        if (elapsedTime < NXDT.TIME.TRANSFER_ESTIMATE) {
             this.progressTime.innerText = 'estimating…';
-            return;
+        } else {
+            const remaindTime = (elapsedTime / perc) * (1 - perc);
+            this.progressTime.innerText = this.#formatTime(remaindTime / 1000);
         }
-
-        const remaindTime = (elapsedTime / perc) * (1 - perc);
-        this.progressTime.innerText = this.#formatTime(remaindTime / 1000);
-    }
-
-    close() {
-        this.dialog.close();
     }
 }
 
-function showToast(message, notify) {
-    const showTime = 2000;
-
+function notify(message, important) {
     console.info(`Notification: ${message}`);
-    if (notify) new Notification(document.title, { body: message });
+    if (important) new Notification(document.title, { body: message });
 
     const toast = document.getElementById('toast');
     toast.innerText = message;
 
     clearTimeout(toast.timeout);
     toast.togglePopover(true);
-    toast.timeout = setTimeout(() => toast.togglePopover(false), showTime);
+    toast.timeout = setTimeout(() => toast.togglePopover(false), NXDT.TIME.TOAST);
 }
 
 function assert(value, message) {
@@ -456,7 +434,7 @@ class NxdtSession {
         const file = await this.makeFile(filePath);
         this.transfer = new NxdtTransfer(filePath, fileSize);
 
-        this.transfer.show();
+        this.transfer.open();
         try {
             if (headerSize) {
                 await this.handleArchiveTransfer(file, fileSize, headerSize);
@@ -468,7 +446,7 @@ class NxdtSession {
             this.transfer.close();
         }
 
-        showToast('Transfer successful', true);
+        notify('Transfer successful', true);
     }
 
     async parseFileHeader(cmdId, cmdBlock) {
@@ -598,7 +576,7 @@ class NxdtSession {
 
         this.transfer = new NxdtTransfer(extractedFsRootPath, extractedFsSize);
 
-        this.transfer.show();
+        this.transfer.open();
         try {
             await this.handleFsTransfer(extractedFsSize);
 
@@ -617,7 +595,7 @@ class NxdtSession {
             this.transfer.close();
         }
 
-        showToast('Transfer successful', true);
+        notify('Transfer successful', true);
     }
 
     async handleFsTransfer(extractedFsSize) {
@@ -703,7 +681,7 @@ class NxdtSession {
                     throw e;
                 }
 
-                showToast('Transfer interrupted', true);
+                notify('Transfer interrupted');
             }
         }
     }
@@ -743,7 +721,7 @@ async function requestDirectory() {
     }
 
     deviceButton.disabled = false;
-    directoryButton.querySelector('.value').innerText = globalThis.directory.name;
+    setValueText(directoryButton, globalThis.directory.name);
 
     navigator.usb.addEventListener('connect', async (event) => {
         if (!globalThis.device) await setupDevice(event.device);
@@ -778,10 +756,10 @@ async function requestNotify() {
     }
 
     if (Notification.permission == 'granted') {
-        notifyButton.querySelector('.value').innerText = 'Allowed';
+        setValueText(notifyButton, 'Allowed');
         notifyButton.disabled = true;
     } else {
-        showToast('Notifications denied');
+        notify('Notifications denied');
     }
 }
 
@@ -794,7 +772,7 @@ async function setupDevice(usbDev) {
         globalThis.device = await new NxdtUsb(usbDev);
         await globalThis.device.open();
     } catch (e) {
-        showToast('Device unavailable');
+        notify('Device unavailable');
         throw e;
     }
 
@@ -808,58 +786,56 @@ async function setupDevice(usbDev) {
 
         await session.parseSessionHeader(cmdId, cmdBlock);
     } catch (e) {
-        showToast('Device incompatible');
+        notify('Device incompatible');
         await globalThis.device.device.forget();
         delete globalThis.device;
         throw e;
     }
 
-    deviceButton.querySelector('.value').innerText = `${globalThis.device.device.productName} (${globalThis.device.device.serialNumber})`;
+    setValueText(deviceButton, `${globalThis.device.device.productName} (${globalThis.device.device.serialNumber})`);
     try {
         await session.handleSessionTransfer();
     } catch (e) {
-        showToast('Connection interrupted', true);
+        notify('Connection interrupted', true);
     } finally {
         await globalThis.device.close();
         delete globalThis.device;
-        deviceButton.querySelector('.value').innerText = 'Not connected';
+        setValueText(deviceButton, 'Not connected');
     }
 }
 
 // Broswer support
 const fsSupported = window?.showDirectoryPicker;
 const usbSupported = navigator?.usb?.requestDevice;
-const platform = navigator?.userAgentData?.platform;
 
-console.debug(`Support: userPlatform=${Boolean(platform)}, navigatorUsb=${Boolean(usbSupported)}, fileSystemDirectory=${Boolean(fsSupported)}`);
+console.debug(`Support: navigatorUsb=${Boolean(usbSupported)}, fileSystemDirectory=${Boolean(fsSupported)}`);
 
-if (!platform || !fsSupported || !usbSupported) {
+if (!fsSupported || !usbSupported) {
     const app = document.getElementById('app');
     app.remove();
-
-    const supportDialog = document.getElementById('support');
-    try {
-        supportDialog.showModal();
-    } catch (e) {
-        alert(supportDialog.innerText);
-    }
-
+    
+    const support = new NxdtDialog('support');
+    support.open();
+    
     assert(false, 'Unsupported browser!')
 }
 
 
 // Device support
 const deviceInfo = document.getElementById('device-info');
-const platformInfo = deviceInfo.querySelector(`[data-platform=${platform}]`);
+const platform = navigator?.userAgentData?.platform || 'Unknown';
+const platformInfo = deviceInfo.querySelector(`[data-platform=${platform}]`) || deviceInfo.querySelector('[data-platform=unknown]');
 
-if (platform == 'Linux') {
-    const deviceRules = platformInfo.querySelector('.value');
-    deviceRules.innerText = `SUBSYSTEM=='usb', ATTRS{idVendor}=='${hex(NXDT.DEVICE.vendorId, 4)}', ATTRS{idProduct}=='${hex(NXDT.DEVICE.productId, 4)}', TAG+='uaccess'`;
+switch (platformInfo.dataset.platform) {
+    case 'Linux':
+        setValueText(platformInfo, `SUBSYSTEM=='usb', ATTRS{idVendor}=='${hex(NXDT.DEVICE.vendorId, 4)}', ATTRS{idProduct}=='${hex(NXDT.DEVICE.productId, 4)}', TAG+='uaccess'`);
+        break;
+    case 'unknown':
+        setValueText(platformInfo, platform);
+        break;
 }
 
-if (platformInfo) {
-    platformInfo.hidden = false;
-}
+platformInfo.hidden = false;
 
 
 // Setup
@@ -872,6 +848,6 @@ deviceButton.addEventListener('click', requestDevice);
 notifyButton.addEventListener('click', requestNotify);
 
 if (Notification.permission == 'granted') {
-    notifyButton.querySelector('.value').innerText = 'Allowed';
+    setValueText(notifyButton, 'Allowed')
     notifyButton.disabled = true;
 }
