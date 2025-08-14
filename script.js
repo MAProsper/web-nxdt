@@ -832,7 +832,7 @@ async function handleSession() {
     try {
         await currentSession.handleSessionTransfer();
     } catch (e) {
-        notify('Connection error', true);
+        notify('Application error', true);
         throw e;
     } finally {
         await closeDevice();
