@@ -606,7 +606,7 @@ class NxdtSession {
     async handleFsTransfer(fsSize) {
         console.debug('Handeling: fs transfer');
         const dir = this.getDir();
-        
+
         // Transfer FS
         let offset = 0;
         while (offset < fsSize) {
@@ -772,12 +772,6 @@ async function requestNotify() {
     if (!syncNotify()) {
         notify('Notifications denied');
     }
-}
-
-async function getDevices() {
-    
-    const device = devices.find(dev => dev.vendorId == NXDT.DEVICE.vendorId && dev.productId == NXDT.DEVICE.productId);
-    return device;
 }
 
 async function closeDevice() {
