@@ -271,14 +271,10 @@ class NxdtUsb {
             out: endpointOut.endpointNumber,
         }
 
-        // Save endpoint max packet size and USB version.
+        // Save endpoint max packet size
         this.packetSize = endpointIn.packetSize;
-        this.version = {
-            major: this.device.usbVersionMajor,
-            minor: this.device.usbVersionMinor
-        }
 
-        console.debug('Created: USB device');
+        console.debug(`Created: USB device (version=${this.device.usbVersionMajor}.${this.device.usbVersionMinor})`);
     }
 
     async open() {
@@ -424,13 +420,11 @@ class NxdtSession {
 
     async parseCmdHeader(cmdHeader) {
         console.debug('Parsing: command header');
-
         assert(cmdHeader && cmdHeader.byteLength == NXDT.SIZE.COMMAND_HEADER, `Command header is the wrong size! (got=${cmdHeader.byteLength} expect=${NXDT.SIZE.COMMAND_HEADER})`);
 
         const [magic, cmdId, cmdDataSize, _] = NXDT.STRUCT.COMMAND_HEADER.unpack(cmdHeader);
         console.debug(`Parsed: command header (magic=${magic}, cmdId=${cmdId}, cmdDataSize=${cmdDataSize})`);
 
-        // Verify magic word and command id.
         this.assert(magic == NXDT.ABI.MAGIC, NXDT.STATUS.INVALID_MAGIC_WORD);
         this.assert(Object.values(NXDT.COMMAND).includes(cmdId), NXDT.STATUS.UNSUPPORTED_CMD);
 
@@ -465,7 +459,6 @@ class NxdtSession {
         console.info('Requested: file transfer command');
         const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
 
-        // Get file object.
         const dir = this.getDir();
         const file = await this.makeFile(dir, filePath);
 
@@ -491,14 +484,10 @@ class NxdtSession {
         console.debug('Parsing: file header');
         await this.assert(cmdId == NXDT.COMMAND.FILE_TRANSFER && cmdData.byteLength == NXDT.SIZE.FILE_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
 
-        // Parse command block.
         const [fileSize, filePathLength, headerSize] = NXDT.STRUCT.FILE_HEADER.unpackFrom(cmdData, 0);
         const filePath = new Struct(`<${filePathLength}s`).unpackFrom(cmdData, 16)[0];
-
-        // Print info.
         console.debug(`Parsed: file header (fileSize=${fileSize}, filePathLength=${filePathLength}, headerSize=${headerSize})`);
 
-        // Perform sanity checks.
         this.assert(fileSize <= Number.MAX_SAFE_INTEGER, NXDT.STATUS.HOST_IO_ERROR);
         this.assert(headerSize < fileSize, NXDT.STATUS.MALFORMED_CMD);
         this.assert(filePathLength && filePathLength <= NXDT.SIZE.FILE_NAME_LENGTH, NXDT.STATUS.MALFORMED_CMD);
@@ -513,20 +502,20 @@ class NxdtSession {
         let offset = 0;
         while (offset < fileSize) {
 
-            // Update block size (if needed).
+            // Update block size (if needed)
             const diff = fileSize - offset;
             const blksize = Math.min(NXDT.SIZE.FILE_BLOCK_TRANSFER, diff);
 
-            // Set block size and handle Zero-Length Termination packet (if needed).
+            // Set read size and handle Zero-Length Termination packet (if needed)
             let rdSize = blksize;
             if (((offset + blksize) >= fileSize) && this.device.isAlignedToPacket(blksize)) {
                 rdSize += 1;
             }
 
-            // Read current chunk.
+            // Read current chunk
             const chunk = await this.device.read(rdSize);
 
-            // Check if we're dealing with a CancelFileTransfer command.
+            // Check if we're dealing with a command
             if (chunk.byteLength == NXDT.SIZE.COMMAND_HEADER) {
                 let cmdId, cmdData;
                 try {
@@ -550,7 +539,7 @@ class NxdtSession {
     async handleArchiveTransfer(file, fileSize, headerSize) {
         console.debug('Handeling: archive transfer');
 
-        // Write header padding right away.
+        // Skip header
         await file.seek(headerSize);
 
         // File entrys
@@ -606,7 +595,6 @@ class NxdtSession {
         console.debug('Parsing: FS header');
         await this.assert(cmdId == NXDT.COMMAND.START_FS_TRANSFER && cmdData.byteLength == NXDT.SIZE.START_FS_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
 
-        // Parse command block.
         const [fsSize, fsPath] = NXDT.STRUCT.FS_HADER.unpack(cmdData);
         this.assert(fsSize <= Number.MAX_SAFE_INTEGER, NXDT.STATUS.HOST_IO_ERROR);
         console.info(`Parsed: fs header (fsSize=${fsSize}, fsPath=${fsPath})`);
@@ -617,10 +605,9 @@ class NxdtSession {
 
     async handleFsTransfer(fsSize) {
         console.debug('Handeling: fs transfer');
-
-        // Transfer file system
         const dir = this.getDir();
-
+        
+        // Transfer FS
         let offset = 0;
         while (offset < fsSize) {
             const [cmdId, cmdData] = await this.getCmd();
@@ -643,7 +630,7 @@ class NxdtSession {
             offset += fileSize;
         }
 
-        // FS end
+        // End FS
         const [cmdId, cmdData] = await this.getCmd();
 
         if (cmdId == NXDT.COMMAND.CANCEL_TRANSFER) {
@@ -663,26 +650,11 @@ class NxdtSession {
         console.debug('Handeling: session start command');
         await this.assert(cmdId == NXDT.COMMAND.START_SESSION && cmdData.byteLength == NXDT.SIZE.START_SESSION_HEADER, NXDT.STATUS.MALFORMED_CMD);
 
-        // Parse command block.
         const [versionMajor, versionMinor, versionMicro, abiVersion, versionCommit] = NXDT.STRUCT.SESSION_HEADER.unpack(cmdData);
         const [abiMajor, abiMinor] = [((abiVersion >> 4) & 0x0F), (abiVersion & 0x0F)];
+        console.debug(`Parsed: client info (version=${versionMajor}.${versionMinor}.${versionMicro}, abi=${abiMajor}.${abiMinor}, commit=${versionCommit})`);
 
-        this.client = {
-            version: {
-                major: versionMajor,
-                minor: versionMinor,
-                micro: versionMicro,
-                commit: versionCommit
-            },
-            abi: {
-                major: abiMajor,
-                minor: abiMinor
-            }
-        }
-
-        // Print client info.
-        console.debug(`Parsed: client info (productName=${this.device.device.productName} clientVersion=${this.client.version.major}.${this.client.version.minor}.${this.client.version.micro}, clientAbi=${this.client.abi.major}.${this.client.abi.minor} clientRev=${this.client.version.commit}), usbVersion=${this.device.version.major}.${this.device.version.minor})`);
-        this.assert(this.client.abi.major == NXDT.ABI.MAJOR && this.client.abi.minor == NXDT.ABI.MINOR, NXDT.STATUS.UNSUPPORTED_ABI_VERSION);
+        this.assert(abiMajor == NXDT.ABI.MAJOR && abiMinor == NXDT.ABI.MINOR, NXDT.STATUS.UNSUPPORTED_ABI_VERSION);
         await this.sendStatus(NXDT.STATUS.SUCCESS);
     }
 
