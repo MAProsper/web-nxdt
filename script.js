@@ -244,7 +244,10 @@ class NxdtUsb {
     }
 
     async setup(device) {
+        console.debug('Creating: USB device');
         this.device = device;
+
+        assert(this.device.manufacturerId == NXDT.DEVICE.manufacturerId && this.device.productId == NXDT.DEVICE.productId, 'Invalid manufacturer/product IDs!')
 
         // Check if the product and manufacturer strings match the ones used by nxdumptool.
         // TODO: enable product string check whenever we're ready for a release.
@@ -275,19 +278,27 @@ class NxdtUsb {
             minor: this.device.usbVersionMinor
         }
 
-        console.debug('Successfully retrieved USB endpoints!');
+        console.debug('Created: USB device');
     }
 
     async open() {
+        console.debug('Opening: USB device');
+
         await this.device.open();
         try { await this.device.reset() } catch (e) { console.warn(e) }
         await this.device.claimInterface(this.interface);
+
+        console.debug('Opened: USB device');
     }
 
     async close() {
+        console.debug('Closing: USB device');
+
         try { await this.device.reset() } catch (e) { }
         try { await this.device.releaseInterface(this.interface) } catch (e) { }
         try { await this.device.close() } catch (e) { }
+
+        console.debug('Closed: USB device');
     }
 
     async read(size) {
@@ -325,6 +336,7 @@ class NxdtRequest extends NxdtDialog {
     constructor(name) {
         super('request')
         setValueText(this.dialog, name);
+        console.debug(`Request: ${name}`);
     }
 }
 
@@ -332,6 +344,7 @@ class NxdtTransfer extends NxdtDialog {
     constructor(name, size) {
         super('transfer')
         setValueText(this.dialog, name);
+        console.debug(`Transfer: size=${size}`);
 
         this.progess = this.dialog.querySelector('progress');
 
@@ -373,7 +386,7 @@ class NxdtSession {
     /* HELPERS */
     async assert(value, code) {
         try {
-            return assert(value, `Assert failed (${code})!`);
+            return assert(value, `Assert failed (code=${code})!`);
         } catch (e) {
             await this.sendStatus(code);
             throw e;
@@ -390,56 +403,67 @@ class NxdtSession {
 
     /* PROTOCOL */
     async sendStatus(code) {
+        console.debug(`Sening: status (${code})`)
+
         const status = NXDT.STRUCT.STATUS_RESPONSE.pack(NXDT.ABI.MAGIC, code, this.device.packetSize);
         const wr = await this.device.write(status);
 
         assert(wr == status.byteLength, 'Failed to send status code!');
+        console.debug(`Send: status`)
     }
 
     async getCmdHeader() {
+        console.debug('Receiving: command header');
+
         const cmdHeader = await this.device.read(NXDT.SIZE.COMMAND_HEADER);
-        assert(cmdHeader.byteLength == NXDT.SIZE.COMMAND_HEADER, `Failed to read ${NXDT.SIZE.COMMAND_HEADER}-byte long command header!`);
-        console.debug('Received command header data.');
+        assert(cmdHeader.byteLength == NXDT.SIZE.COMMAND_HEADER, `Failed to read command header! (got=${cmdHeader.byteLength} expect=${NXDT.SIZE.COMMAND_HEADER})`);
+
+        console.debug('Received: command header');
         return cmdHeader;
     }
 
     async parseCmdHeader(cmdHeader) {
-        assert(cmdHeader && cmdHeader.byteLength == NXDT.SIZE.COMMAND_HEADER, `Failed to read ${NXDT.SIZE.COMMAND_HEADER}-byte long command header!`);
+        console.debug('Parsing: command header');
 
-        const [magic, cmdId, cmdBlockSize, _] = NXDT.STRUCT.COMMAND_HEADER.unpack(cmdHeader);
-        console.debug(`parseCmdHeader(magic=${magic}, cmdId=${cmdId}, cmdBlockSize=${cmdBlockSize})`);
+        assert(cmdHeader && cmdHeader.byteLength == NXDT.SIZE.COMMAND_HEADER, `Command header is the wrong size! (got=${cmdHeader.byteLength} expect=${NXDT.SIZE.COMMAND_HEADER})`);
+
+        const [magic, cmdId, cmdDataSize, _] = NXDT.STRUCT.COMMAND_HEADER.unpack(cmdHeader);
+        console.debug(`Parsed: command header (magic=${magic}, cmdId=${cmdId}, cmdDataSize=${cmdDataSize})`);
 
         // Verify magic word and command id.
         this.assert(magic == NXDT.ABI.MAGIC, NXDT.STATUS.INVALID_MAGIC_WORD);
         this.assert(Object.values(NXDT.COMMAND).includes(cmdId), NXDT.STATUS.UNSUPPORTED_CMD);
 
-        return [cmdId, cmdBlockSize];
+        return [cmdId, cmdDataSize];
     }
 
-    async getCmdBlock(cmdBlockSize) {
-        // Handle Zero-Length Termination packet (if needed).
-        let rdSize = cmdBlockSize;
-        if (this.device.isAlignedToPacket(cmdBlockSize)) {
+    async getCmdBlock(cmdDataSize) {
+        console.debug('Receiving: command block');
+
+        // Handle Zero-Length Termination packet (if needed)
+        let rdSize = cmdDataSize;
+        if (this.device.isAlignedToPacket(cmdDataSize)) {
             rdSize += 1;
         }
 
-        const cmdBlock = cmdBlockSize ? await this.device.read(rdSize) : new ArrayBuffer();
-        assert(cmdBlock.byteLength == cmdBlockSize, `Failed to read ${cmdBlockSize}-byte long command block!`);
+        const cmdData = cmdDataSize ? await this.device.read(rdSize) : new ArrayBuffer();
+        assert(cmdData.byteLength == cmdDataSize, `Failed to read ${cmdDataSize}-byte long command block!`);
 
-        console.debug('Received command block data.');
-        return cmdBlock;
+        console.debug('Received: command block');
+        return cmdData;
     }
 
     async getCmd(cmdHeader) {
         if (!cmdHeader) cmdHeader = await this.getCmdHeader();
-        const [cmdId, cmdBlockLength] = await this.parseCmdHeader(cmdHeader);
-        const cmdBlock = await this.getCmdBlock(cmdBlockLength);
-        return [cmdId, cmdBlock];
+        const [cmdId, cmdDataLength] = await this.parseCmdHeader(cmdHeader);
+        const cmdData = await this.getCmdBlock(cmdDataLength);
+        return [cmdId, cmdData];
     }
 
     /* ACTIONS */
-    async handleFileCmd(cmdId, cmdBlock) {
-        const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdBlock);
+    async handleFileCmd(cmdId, cmdData) {
+        console.info('Requested: file transfer command');
+        const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
 
         // Get file object.
         const dir = this.getDir();
@@ -453,25 +477,26 @@ class NxdtSession {
             } else {
                 await this.handleFileTransfer(file, fileSize);
             }
+            notify('Finishing transfer');
         } finally {
             await file.close();
             this.transfer.close();
             delete this.transfer;
         }
 
-        notify('Transfer successful', true);
+        notify('Transfer finished', true);
     }
 
-    async parseFileHeader(cmdId, cmdBlock) {
-        await this.assert(cmdId == NXDT.COMMAND.FILE_TRANSFER && cmdBlock.byteLength == NXDT.SIZE.FILE_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
+    async parseFileHeader(cmdId, cmdData) {
+        console.debug('Parsing: file header');
+        await this.assert(cmdId == NXDT.COMMAND.FILE_TRANSFER && cmdData.byteLength == NXDT.SIZE.FILE_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
 
         // Parse command block.
-        const [fileSize, filePathLength, headerSize] = NXDT.STRUCT.FILE_HEADER.unpackFrom(cmdBlock, 0);
-        const filePath = new Struct(`<${filePathLength}s`).unpackFrom(cmdBlock, 16)[0];
+        const [fileSize, filePathLength, headerSize] = NXDT.STRUCT.FILE_HEADER.unpackFrom(cmdData, 0);
+        const filePath = new Struct(`<${filePathLength}s`).unpackFrom(cmdData, 16)[0];
 
         // Print info.
-        console.debug(`File size: ${fileSize} | File path length: ${filePathLength} | Header size: ${headerSize}.`);
-        console.info(`Receiving file: ${filePath}`);
+        console.debug(`Parsed: file header (fileSize=${fileSize}, filePathLength=${filePathLength}, headerSize=${headerSize})`);
 
         // Perform sanity checks.
         this.assert(fileSize <= Number.MAX_SAFE_INTEGER, NXDT.STATUS.HOST_IO_ERROR);
@@ -482,45 +507,9 @@ class NxdtSession {
         return [filePath, fileSize, headerSize];
     }
 
-    async handleArchiveTransfer(file, fileSize, headerSize) {
-        // Write header padding right away.
-        await file.seek(headerSize);
-
-        // File entrys
-        let offset = 0;
-        while (offset < (fileSize - headerSize)) {
-            const [cmdId, cmdBlock] = await this.getCmd();
-
-            if (cmdId == NXDT.COMMAND.CANCEL_TRANSFER) {
-                await this.handleCancelCmd(cmdId, cmdBlock);
-            }
-
-            const [fileName, fileSize, fileHeader] = await this.parseFileHeader(cmdId, cmdBlock);
-            this.assert(!fileHeader, NXDT.STATUS.MALFORMED_CMD);
-            console.debug(`Reciving file entry ${fileName}`);
-
-            await this.handleFileTransfer(file, fileSize);
-            offset += fileSize;
-        }
-
-        // File header
-        const [cmdId, cmdBlock] = await this.getCmd();
-
-        if (cmdId == NXDT.COMMAND.CANCEL_TRANSFER) {
-            await this.handleCancelCmd(cmdId, cmdBlock);
-        }
-
-        await this.assert(cmdId == NXDT.COMMAND.FILE_HEADER_TRANSFER && cmdBlock.byteLength == headerSize, NXDT.STATUS.MALFORMED_CMD);
-
-        await file.seek(0);
-        await file.write(cmdBlock);
-        offset += cmdBlock.byteLength;
-        this.transfer.update(cmdBlock.byteLength);
-
-        await this.sendStatus(NXDT.STATUS.SUCCESS);
-    }
-
     async handleFileTransfer(file, fileSize) {
+        console.debug('Handeling: file transfer');
+
         let offset = 0;
         while (offset < fileSize) {
 
@@ -539,13 +528,13 @@ class NxdtSession {
 
             // Check if we're dealing with a CancelFileTransfer command.
             if (chunk.byteLength == NXDT.SIZE.COMMAND_HEADER) {
-                let cmdId, cmdBlock;
+                let cmdId, cmdData;
                 try {
-                    [cmdId, cmdBlock] = await this.getCmd(chunk);
+                    [cmdId, cmdData] = await this.getCmd(chunk);
                 } catch (e) { }
 
                 if (cmdId != undefined) {
-                    await this.handleCancelCmd(cmdId, cmdBlock);
+                    await this.handleCancelCmd(cmdId, cmdData);
                 }
             }
 
@@ -558,29 +547,48 @@ class NxdtSession {
         await this.sendStatus(NXDT.STATUS.SUCCESS);
     }
 
-    async handleCancelCmd(cmdId, cmdBlock) {
-        await this.assert(cmdId == NXDT.COMMAND.CANCEL_TRANSFER && cmdBlock.byteLength == 0, NXDT.STATUS.MALFORMED_CMD);
+    async handleArchiveTransfer(file, fileSize, headerSize) {
+        console.debug('Handeling: archive transfer');
 
-        notify('Cancelling operation');
+        // Write header padding right away.
+        await file.seek(headerSize);
+
+        // File entrys
+        let offset = 0;
+        while (offset < (fileSize - headerSize)) {
+            const [cmdId, cmdData] = await this.getCmd();
+
+            if (cmdId == NXDT.COMMAND.CANCEL_TRANSFER) {
+                await this.handleCancelCmd(cmdId, cmdData);
+            }
+
+            const [fileName, fileSize, fileHeader] = await this.parseFileHeader(cmdId, cmdData);
+            this.assert(!fileHeader, NXDT.STATUS.MALFORMED_CMD);
+
+            await this.handleFileTransfer(file, fileSize);
+            offset += fileSize;
+        }
+
+        // File header
+        const [cmdId, cmdData] = await this.getCmd();
+
+        if (cmdId == NXDT.COMMAND.CANCEL_TRANSFER) {
+            await this.handleCancelCmd(cmdId, cmdData);
+        }
+
+        await this.assert(cmdId == NXDT.COMMAND.FILE_HEADER_TRANSFER && cmdData.byteLength == headerSize, NXDT.STATUS.MALFORMED_CMD);
+
+        await file.seek(0);
+        await file.write(cmdData);
+        offset += cmdData.byteLength;
+        this.transfer.update(cmdData.byteLength);
 
         await this.sendStatus(NXDT.STATUS.SUCCESS);
-        throw new NxdtCancelCmd();
     }
 
-    async parseFsCmdHeader(cmdId, cmdBlock) {
-        await this.assert(cmdId == NXDT.COMMAND.START_FS_TRANSFER && cmdBlock.byteLength == NXDT.SIZE.START_FS_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
-
-        // Parse command block.
-        const [fsSize, fsPath] = NXDT.STRUCT.FS_HADER.unpack(cmdBlock);
-        this.assert(fsSize <= Number.MAX_SAFE_INTEGER, NXDT.STATUS.HOST_IO_ERROR);
-        console.info(`Starting FS transfer (size ${fsSize}, output path '${fsPath}').`);
-
-        await this.sendStatus(NXDT.STATUS.SUCCESS);
-        return [fsSize, fsPath];
-    }
-
-    async handleFsCmd(cmdId, cmdBlock) {
-        const [fsSize, fsPath] = await this.parseFsCmdHeader(cmdId, cmdBlock);
+    async handleFsCmd(cmdId, cmdData) {
+        console.info('Requested: fs transfer command');
+        const [fsSize, fsPath] = await this.parseFsCmdHeader(cmdId, cmdData);
 
         this.transfer = new NxdtTransfer(fsPath, fsSize);
         this.transfer.open();
@@ -591,22 +599,37 @@ class NxdtSession {
             delete this.transfer;
         }
 
-        notify('Transfer successful', true);
+        notify('Transfer finished', true);
+    }
+
+    async parseFsCmdHeader(cmdId, cmdData) {
+        console.debug('Parsing: FS header');
+        await this.assert(cmdId == NXDT.COMMAND.START_FS_TRANSFER && cmdData.byteLength == NXDT.SIZE.START_FS_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
+
+        // Parse command block.
+        const [fsSize, fsPath] = NXDT.STRUCT.FS_HADER.unpack(cmdData);
+        this.assert(fsSize <= Number.MAX_SAFE_INTEGER, NXDT.STATUS.HOST_IO_ERROR);
+        console.info(`Parsed: fs header (fsSize=${fsSize}, fsPath=${fsPath})`);
+
+        await this.sendStatus(NXDT.STATUS.SUCCESS);
+        return [fsSize, fsPath];
     }
 
     async handleFsTransfer(fsSize) {
+        console.debug('Handeling: fs transfer');
+
         // Transfer file system
         const dir = this.getDir();
 
         let offset = 0;
         while (offset < fsSize) {
-            const [cmdId, cmdBlock] = await this.getCmd();
+            const [cmdId, cmdData] = await this.getCmd();
 
             if (cmdId == NXDT.COMMAND.CANCEL_TRANSFER) {
-                await this.handleCancelCmd(cmdId, cmdBlock);
+                await this.handleCancelCmd(cmdId, cmdData);
             }
 
-            const [filePath, fileSize, fileHeader] = await this.parseFileHeader(cmdId, cmdBlock);
+            const [filePath, fileSize, fileHeader] = await this.parseFileHeader(cmdId, cmdData);
 
             this.assert(!fileHeader, NXDT.STATUS.MALFORMED_CMD);
 
@@ -621,26 +644,27 @@ class NxdtSession {
         }
 
         // FS end
-        const [cmdId, cmdBlock] = await this.getCmd();
+        const [cmdId, cmdData] = await this.getCmd();
 
         if (cmdId == NXDT.COMMAND.CANCEL_TRANSFER) {
-            await this.handleCancelCmd(cmdId, cmdBlock);
+            await this.handleCancelCmd(cmdId, cmdData);
         }
 
-        await this.handleEndFsCmd(cmdId, cmdBlock);
+        await this.handleEndFsCmd(cmdId, cmdData);
     }
 
-    async handleEndFsCmd(cmdId, cmdBlock) {
-        await this.assert(cmdId == NXDT.COMMAND.END_FS_TRANSFER && cmdBlock.byteLength == 0, NXDT.STATUS.MALFORMED_CMD);
+    async handleEndFsCmd(cmdId, cmdData) {
+        await this.assert(cmdId == NXDT.COMMAND.END_FS_TRANSFER && cmdData.byteLength == 0, NXDT.STATUS.MALFORMED_CMD);
         await this.sendStatus(NXDT.STATUS.SUCCESS);
     }
 
     /* SESSION */
-    async handleStartSessionCmd(cmdId, cmdBlock) {
-        await this.assert(cmdId == NXDT.COMMAND.START_SESSION && cmdBlock.byteLength == NXDT.SIZE.START_SESSION_HEADER, NXDT.STATUS.MALFORMED_CMD);
+    async handleStartSessionCmd(cmdId, cmdData) {
+        console.debug('Handeling: session start command');
+        await this.assert(cmdId == NXDT.COMMAND.START_SESSION && cmdData.byteLength == NXDT.SIZE.START_SESSION_HEADER, NXDT.STATUS.MALFORMED_CMD);
 
         // Parse command block.
-        const [versionMajor, versionMinor, versionMicro, abiVersion, versionCommit] = NXDT.STRUCT.SESSION_HEADER.unpack(cmdBlock);
+        const [versionMajor, versionMinor, versionMicro, abiVersion, versionCommit] = NXDT.STRUCT.SESSION_HEADER.unpack(cmdData);
         const [abiMajor, abiMinor] = [((abiVersion >> 4) & 0x0F), (abiVersion & 0x0F)];
 
         this.client = {
@@ -657,25 +681,26 @@ class NxdtSession {
         }
 
         // Print client info.
-        console.log(`Client info: ${this.device.device.productName} v${this.client.version.major}.${this.client.version.minor}.${this.client.version.micro}, USB ABI v${this.client.abi.major}.${this.client.abi.minor} (commit ${this.client.version.commit}), USB ${this.device.version.major}.${this.device.version.minor}`);
+        console.debug(`Parsed: client info (productName=${this.device.device.productName} clientVersion=${this.client.version.major}.${this.client.version.minor}.${this.client.version.micro}, clientAbi=${this.client.abi.major}.${this.client.abi.minor} clientRev=${this.client.version.commit}), usbVersion=${this.device.version.major}.${this.device.version.minor})`);
         this.assert(this.client.abi.major == NXDT.ABI.MAJOR && this.client.abi.minor == NXDT.ABI.MINOR, NXDT.STATUS.UNSUPPORTED_ABI_VERSION);
         await this.sendStatus(NXDT.STATUS.SUCCESS);
     }
 
     async handleSessionTransfer() {
+        console.debug('Handeling: session transfer command');
         while (true) {
-            const [cmdId, cmdBlock] = await this.getCmd();
+            const [cmdId, cmdData] = await this.getCmd();
 
             try {
                 switch (cmdId) {
                     case NXDT.COMMAND.FILE_TRANSFER:
-                        await this.handleFileCmd(cmdId, cmdBlock);
+                        await this.handleFileCmd(cmdId, cmdData);
                         break;
                     case NXDT.COMMAND.START_FS_TRANSFER:
-                        await this.handleFsCmd(cmdId, cmdBlock);
+                        await this.handleFsCmd(cmdId, cmdData);
                         break;
                     case NXDT.COMMAND.END_SESSION:
-                        await this.handleEndSessionCmd(cmdId, cmdBlock);
+                        await this.handleEndSessionCmd(cmdId, cmdData);
                         return;
                     default:
                         await this.sendStatus(NXDT.STATUS.MALFORMED_CMD);
@@ -691,9 +716,21 @@ class NxdtSession {
         }
     }
 
-    async handleEndSessionCmd(cmdId, cmdBlock) {
-        await this.assert(cmdId == NXDT.COMMAND.END_SESSION && cmdBlock.byteLength == 0, NXDT.STATUS.MALFORMED_CMD);
+    async handleEndSessionCmd(cmdId, cmdData) {
+        await this.assert(cmdId == NXDT.COMMAND.END_SESSION && cmdData.byteLength == 0, NXDT.STATUS.MALFORMED_CMD);
+
+        notify('Disconnecting device');
+
         await this.sendStatus(NXDT.STATUS.SUCCESS);
+    }
+
+    async handleCancelCmd(cmdId, cmdData) {
+        await this.assert(cmdId == NXDT.COMMAND.CANCEL_TRANSFER && cmdData.byteLength == 0, NXDT.STATUS.MALFORMED_CMD);
+
+        notify('Cancelling operation');
+
+        await this.sendStatus(NXDT.STATUS.SUCCESS);
+        throw new NxdtCancelCmd();
     }
 }
 
@@ -720,9 +757,18 @@ async function requestDirectory() {
         await handleSession();
     });
 
-    const device = await getDevice();
-    if (!device) return;
-    await openDevice(device);
+    const devices = await navigator.usb.getDevices();
+    for (let device of devices) {
+        try {
+            await openDevice(device);
+        } catch (e) {
+            continue;
+        }
+
+        break;
+    }
+
+    if (!currentSession) return;
     await handleSession();
 }
 
@@ -756,8 +802,8 @@ async function requestNotify() {
     }
 }
 
-async function getDevice() {
-    const devices = await navigator.usb.getDevices();
+async function getDevices() {
+    
     const device = devices.find(dev => dev.vendorId == NXDT.DEVICE.vendorId && dev.productId == NXDT.DEVICE.productId);
     return device;
 }
@@ -773,7 +819,7 @@ async function openDevice(usbDev) {
     notify('Connecting device');
 
     if (currentDevice) {
-        console.warn('Disconnecting device!');
+        console.info('Changing device!');
         await closeDevice();
     }
 
@@ -795,9 +841,9 @@ async function openDevice(usbDev) {
 
     currentSession = new NxdtSession(currentDevice, () => currentDirectory);
 
-    let cmdId, cmdBlock
+    let cmdId, cmdData
     try {
-        [cmdId, cmdBlock] = await currentSession.getCmd();
+        [cmdId, cmdData] = await currentSession.getCmd();
     } catch (e) {
         notify('Application unresponsive');
         await closeDevice();
@@ -805,7 +851,7 @@ async function openDevice(usbDev) {
     }
 
     try {
-        await currentSession.handleStartSessionCmd(cmdId, cmdBlock);
+        await currentSession.handleStartSessionCmd(cmdId, cmdData);
     } catch (e) {
         notify('Application incompatible');
         await closeDevice();
@@ -857,6 +903,8 @@ function deviceSupport() {
     const deviceInfo = document.getElementById('device-info');
     const platform = navigator?.userAgentData?.platform || 'Unknown';
     const platformInfo = deviceInfo.querySelector(`[data-platform=${platform}]`) || deviceInfo.querySelector('[data-platform=unknown]');
+
+    console.debug(`Platform: ${platform}`)
 
     switch (platformInfo.dataset.platform) {
         case 'Linux':
