@@ -223,7 +223,7 @@ async function makeFile(dir, filePath) {
         }
     }
 
-    // Make sure the output filepath doesn't point to an existing directory.
+    // Create file object.
     let file;
     try {
         file = await dir.getFileHandle(name, { create: true })
@@ -240,10 +240,6 @@ class NxdtCancelCmd extends NxdtError { }
 
 class NxdtUsb {
     constructor(device) {
-        return this.setup(device).then(() => this);
-    }
-
-    async setup(device) {
         console.debug('Creating: USB device');
         this.device = device;
 
@@ -790,7 +786,7 @@ async function openDevice(usbDev) {
     }
 
     try {
-        currentDevice = await new NxdtUsb(usbDev);
+        currentDevice = new NxdtUsb(usbDev);
     } catch (e) {
         notify('Device incompatible');
         await usbDev.forget();
