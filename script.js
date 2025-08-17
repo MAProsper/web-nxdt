@@ -707,7 +707,7 @@ async function requestDirectory() {
     const request = new NxdtRequest('Destination directory');
     request.open();
     try {
-        currentDirectory = await window.showDirectoryPicker({ mode: 'readwrite' });
+        currentDirectory = await window.showDirectoryPicker({ id: NXDT.ABI.MAGIC, mode: 'readwrite', startIn: 'downloads' });
     } catch (e) {
         return;
     } finally {
