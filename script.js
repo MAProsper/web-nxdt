@@ -204,6 +204,11 @@ const NXDT = {
     TIME: {
         TOAST: 2000,
         TRANSFER_ESTIMATE: 2000
+    },
+    VERSION: {
+        MAJOR: 1,
+        MINOR: 1,
+        MICRO: 0
     }
 }
 
@@ -916,6 +921,8 @@ function deviceSupport() {
 }
 
 // Setup
+console.info(`Version: ${NXDT.VERSION.MAJOR}.${NXDT.VERSION.MINOR}.${NXDT.VERSION.MICRO}`)
+
 browserSupport();
 deviceSupport();
 
