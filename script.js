@@ -1,3 +1,35 @@
+// === BUILTINS ===
+function hex(value, pad) {
+    return value.toString(16).padStart(pad || 0, '0')
+}
+
+function bytesDecode(bytes, encoding) {
+    return new TextDecoder(encoding).decode(bytes);
+}
+
+function strEncode(str, encoding) {
+    return new TextEncoder(encoding).encode(str).buffer.transfer();
+}
+
+function strStrip(str, chars) {
+    const strAry = Array.from(str);
+    const chrAry = Array.from(chars);
+    const start = strAry.findIndex((ch) => !chrAry.includes(ch));
+    const end = strAry.findLastIndex((ch) => !chrAry.includes(ch));
+    return strAry.slice(start === -1 ? undefined : start, end === -1 ? undefined : end + 1).join('');
+}
+
+function listEquals(ary1, ary2) {
+    if (ary1.length != ary2.length) return false;
+    return ary1.every((e, i) => ary2[i] == e);
+}
+
+function bytesEquals(bytes1, bytes2) {
+    const ary1 = new Uint8Array(bytes1);
+    const ary2 = new Uint8Array(bytes2);
+    return listEquals(Array.from(ary1), Array.from(ary2))
+}
+
 // === STRUCT ===
 
 /* Based on https://github.com/lyngklip/structjs */
@@ -60,8 +92,8 @@ class Struct {
     static pack_d(view, offset, size, littleEndian, value) { view.setFloat64(offset, value, littleEndian) }
     static unpack_d(view, offset, size, littleEndian) { return view.getFloat64(offset, littleEndian) }
     static sizeof_s(count) { return { reps: 1, size: count } }
-    static pack_s(view, offset, size, littleEndian, value) { new Uint8Array(view.buffer, view.byteOffset + offset, size).set(value.split('').map(str => str.charCodeAt(0))) }
-    static unpack_s(view, offset, size, littleEndian) { return String.fromCharCode(...new Uint8Array(view.buffer, view.byteOffset + offset, size)) }
+    static pack_s(view, offset, size, littleEndian, value) { new Uint8Array(view.buffer, view.byteOffset + offset, size).set(new Uint8Array(value, 0, size)) }
+    static unpack_s(view, offset, size, littleEndian) { return new Uint8Array(view.buffer, view.byteOffset + offset, size) }
     static sizeof_p(count) { return { reps: 1, size: count } }
     static pack_p(view, offset, size, littleEndian, value) { view.setUint8(offset, value.length); Struct.pack_s(view, offset + 1, size - 1, value) }
     static unpack_p(view, offset, size, littleEndian) { return Struct.unpack_s(view, offset + 1, Math.min(view.getUint8(offset), size - 1)) }
@@ -142,7 +174,7 @@ const NXDT = {
     ABI: {
         MAJOR: 1,
         MINOR: 2,
-        MAGIC: 'NXDT'
+        MAGIC: strEncode('NXDT', 'utf8')
     },
     COMMAND: {
         START_SESSION: 0,
@@ -179,12 +211,8 @@ NXDT.STRUCT = {
     STATUS_RESPONSE: new Struct('<4sIH6x'),
     COMMAND_HEADER: new Struct('<4sIII'),
     FILE_HEADER: new Struct('<QII'),
-    FS_HADER: new Struct(`<Q${NXDT.SIZE.FILE_NAME_LENGTH}s`),
+    FS_HEADER: new Struct(`<Q${NXDT.SIZE.FILE_NAME_LENGTH}s`),
     SESSION_HEADER: new Struct('<BBBB8s')
-}
-
-function hex(value, pad) {
-    return value.toString(16).padStart(pad || 0, '0')
 }
 
 function assert(value, message) {
@@ -389,7 +417,7 @@ class NxdtSession {
         try {
             return await makeFile(dir, filePath);
         } catch (e) {
-            this.assert(false, NXDT.STATUS.HOST_IO_ERROR);
+            await this.assert(false, NXDT.STATUS.HOST_IO_ERROR);
         }
     }
 
@@ -419,10 +447,10 @@ class NxdtSession {
         assert(cmdHeader && cmdHeader.byteLength == NXDT.SIZE.COMMAND_HEADER, `Command header is the wrong size! (got=${cmdHeader.byteLength} expect=${NXDT.SIZE.COMMAND_HEADER})`);
 
         const [magic, cmdId, cmdDataSize, _] = NXDT.STRUCT.COMMAND_HEADER.unpack(cmdHeader);
-        console.debug(`Parsed: command header (magic=${magic}, cmdId=${cmdId}, cmdDataSize=${cmdDataSize})`);
+        console.debug(`Parsed: command header (magic=${bytesDecode(magic, 'utf8')}, cmdId=${cmdId}, cmdDataSize=${cmdDataSize})`);
 
-        this.assert(magic == NXDT.ABI.MAGIC, NXDT.STATUS.INVALID_MAGIC_WORD);
-        this.assert(Object.values(NXDT.COMMAND).includes(cmdId), NXDT.STATUS.UNSUPPORTED_CMD);
+        await this.assert(bytesEquals(magic, NXDT.ABI.MAGIC), NXDT.STATUS.INVALID_MAGIC_WORD);
+        await this.assert(Object.values(NXDT.COMMAND).includes(cmdId), NXDT.STATUS.UNSUPPORTED_CMD);
 
         return [cmdId, cmdDataSize];
     }
@@ -457,6 +485,7 @@ class NxdtSession {
 
         const dir = this.getDir();
         const file = await this.makeFile(dir, filePath);
+        await this.sendStatus(NXDT.STATUS.SUCCESS);
 
         this.transfer = new NxdtTransfer(filePath, fileSize);
         this.transfer.open();
@@ -481,14 +510,14 @@ class NxdtSession {
         await this.assert(cmdId == NXDT.COMMAND.FILE_TRANSFER && cmdData.byteLength == NXDT.SIZE.FILE_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
 
         const [fileSize, filePathLength, headerSize] = NXDT.STRUCT.FILE_HEADER.unpackFrom(cmdData, 0);
-        const filePath = new Struct(`<${filePathLength}s`).unpackFrom(cmdData, 16)[0];
+        const rawFilePath = new Struct(`<${filePathLength}s`).unpackFrom(cmdData, 16)[0];
+        const filePath = bytesDecode(rawFilePath, 'utf8');
         console.debug(`Parsed: file header (fileSize=${fileSize}, filePathLength=${filePathLength}, headerSize=${headerSize})`);
 
-        this.assert(fileSize <= Number.MAX_SAFE_INTEGER, NXDT.STATUS.HOST_IO_ERROR);
-        this.assert(headerSize < fileSize, NXDT.STATUS.MALFORMED_CMD);
-        this.assert(filePathLength && filePathLength <= NXDT.SIZE.FILE_NAME_LENGTH, NXDT.STATUS.MALFORMED_CMD);
+        await this.assert(fileSize <= Number.MAX_SAFE_INTEGER, NXDT.STATUS.HOST_IO_ERROR);
+        await this.assert(headerSize < fileSize, NXDT.STATUS.MALFORMED_CMD);
+        await this.assert(filePathLength && filePathLength <= NXDT.SIZE.FILE_NAME_LENGTH, NXDT.STATUS.MALFORMED_CMD);
 
-        await this.sendStatus(NXDT.STATUS.SUCCESS);
         return [filePath, fileSize, headerSize];
     }
 
@@ -547,8 +576,10 @@ class NxdtSession {
                 await this.handleCancelCmd(cmdId, cmdData);
             }
 
-            const [fileName, fileSize, fileHeader] = await this.parseFileHeader(cmdId, cmdData);
-            this.assert(!fileHeader, NXDT.STATUS.MALFORMED_CMD);
+            const [filePath, fileSize, fileHeader] = await this.parseFileHeader(cmdId, cmdData);
+            await this.assert(!fileHeader, NXDT.STATUS.MALFORMED_CMD);
+
+            await this.sendStatus(NXDT.STATUS.SUCCESS);
 
             await this.handleFileTransfer(file, fileSize);
             offset += fileSize;
@@ -575,6 +606,8 @@ class NxdtSession {
         console.info('Requested: fs transfer command');
         const [fsSize, fsPath] = await this.parseFsCmdHeader(cmdId, cmdData);
 
+        await this.sendStatus(NXDT.STATUS.SUCCESS);
+
         this.transfer = new NxdtTransfer(fsPath, fsSize);
         this.transfer.open();
         try {
@@ -591,11 +624,11 @@ class NxdtSession {
         console.debug('Parsing: FS header');
         await this.assert(cmdId == NXDT.COMMAND.START_FS_TRANSFER && cmdData.byteLength == NXDT.SIZE.START_FS_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
 
-        const [fsSize, fsPath] = NXDT.STRUCT.FS_HADER.unpack(cmdData);
-        this.assert(fsSize <= Number.MAX_SAFE_INTEGER, NXDT.STATUS.HOST_IO_ERROR);
+        const [fsSize, rawFsPath] = NXDT.STRUCT.FS_HEADER.unpack(cmdData);
+        const fsPath = strStrip(bytesDecode(rawFsPath, 'utf8'), '0');
+        await this.assert(fsSize <= Number.MAX_SAFE_INTEGER, NXDT.STATUS.HOST_IO_ERROR);
         console.info(`Parsed: fs header (fsSize=${fsSize}, fsPath=${fsPath})`);
 
-        await this.sendStatus(NXDT.STATUS.SUCCESS);
         return [fsSize, fsPath];
     }
 
@@ -613,10 +646,11 @@ class NxdtSession {
             }
 
             const [filePath, fileSize, fileHeader] = await this.parseFileHeader(cmdId, cmdData);
-
-            this.assert(!fileHeader, NXDT.STATUS.MALFORMED_CMD);
+            await this.assert(!fileHeader, NXDT.STATUS.MALFORMED_CMD);
 
             const file = await this.makeFile(dir, filePath);
+            await this.sendStatus(NXDT.STATUS.SUCCESS);
+
             try {
                 await this.handleFileTransfer(file, fileSize);
             } finally {
@@ -646,11 +680,12 @@ class NxdtSession {
         console.debug('Handeling: session start command');
         await this.assert(cmdId == NXDT.COMMAND.START_SESSION && cmdData.byteLength == NXDT.SIZE.START_SESSION_HEADER, NXDT.STATUS.MALFORMED_CMD);
 
-        const [versionMajor, versionMinor, versionMicro, abiVersion, versionCommit] = NXDT.STRUCT.SESSION_HEADER.unpack(cmdData);
+        const [versionMajor, versionMinor, versionMicro, abiVersion, rawVersionCommit] = NXDT.STRUCT.SESSION_HEADER.unpack(cmdData);
         const [abiMajor, abiMinor] = [((abiVersion >> 4) & 0x0F), (abiVersion & 0x0F)];
+        const versionCommit = strStrip(bytesDecode(rawVersionCommit, 'utf8'), '\0');
         console.debug(`Parsed: client info (version=${versionMajor}.${versionMinor}.${versionMicro}, abi=${abiMajor}.${abiMinor}, commit=${versionCommit})`);
 
-        this.assert(abiMajor == NXDT.ABI.MAJOR && abiMinor == NXDT.ABI.MINOR, NXDT.STATUS.UNSUPPORTED_ABI_VERSION);
+        await this.assert(abiMajor == NXDT.ABI.MAJOR && abiMinor == NXDT.ABI.MINOR, NXDT.STATUS.UNSUPPORTED_ABI_VERSION);
         await this.sendStatus(NXDT.STATUS.SUCCESS);
     }
 
@@ -707,7 +742,7 @@ async function requestDirectory() {
     const request = new NxdtRequest('Destination directory');
     request.open();
     try {
-        currentDirectory = await window.showDirectoryPicker({ id: NXDT.ABI.MAGIC, mode: 'readwrite', startIn: 'downloads' });
+        currentDirectory = await window.showDirectoryPicker({ id: bytesDecode(NXDT.ABI.MAGIC), mode: 'readwrite', startIn: 'downloads' });
     } catch (e) {
         return;
     } finally {
