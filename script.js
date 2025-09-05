@@ -8,7 +8,7 @@ function bytesDecode(bytes, encoding) {
 }
 
 function strEncode(str, encoding) {
-    return new TextEncoder(encoding).encode(str).buffer.transfer();
+    return new TextEncoder(encoding).encode(str);
 }
 
 function strStrip(str, chars) {
@@ -19,15 +19,9 @@ function strStrip(str, chars) {
     return strAry.slice(start === -1 ? undefined : start, end === -1 ? undefined : end + 1).join('');
 }
 
-function listEquals(ary1, ary2) {
+function aryEquals(ary1, ary2) {
     if (ary1.length != ary2.length) return false;
     return ary1.every((e, i) => ary2[i] == e);
-}
-
-function bytesEquals(bytes1, bytes2) {
-    const ary1 = new Uint8Array(bytes1);
-    const ary2 = new Uint8Array(bytes2);
-    return listEquals(Array.from(ary1), Array.from(ary2))
 }
 
 // === STRUCT ===
@@ -93,7 +87,7 @@ class Struct {
     static unpack_d(view, offset, size, littleEndian) { return view.getFloat64(offset, littleEndian) }
     static sizeof_s(count) { return { reps: 1, size: count } }
     static pack_s(view, offset, size, littleEndian, value) { new Uint8Array(view.buffer, view.byteOffset + offset, size).set(new Uint8Array(value, 0, size)) }
-    static unpack_s(view, offset, size, littleEndian) { return new Uint8Array(view.buffer, view.byteOffset + offset, size) }
+    static unpack_s(view, offset, size, littleEndian) { return new Uint8Array(view.buffer, view.byteOffset + offset, size).slice() }
     static sizeof_p(count) { return { reps: 1, size: count } }
     static pack_p(view, offset, size, littleEndian, value) { view.setUint8(offset, value.length); Struct.pack_s(view, offset + 1, size - 1, value) }
     static unpack_p(view, offset, size, littleEndian) { return Struct.unpack_s(view, offset + 1, Math.min(view.getUint8(offset), size - 1)) }
@@ -127,10 +121,10 @@ class Struct {
     }
 
     unpackFrom(buffer, offset) {
-        if (buffer.byteLength < (offset || 0) + this.size) {
+        if (buffer.length < (offset || 0) + this.size) {
             throw new StructError('Structure larger than remaining buffer');
         }
-        const view = new DataView(buffer, offset || 0);
+        const view = new DataView(buffer.buffer, offset || 0);
         return this.#tokens.map(token => token.unpack(view, token.offset, token.size, this.#littleEndian));
     }
 
@@ -138,16 +132,16 @@ class Struct {
         if (values.length < this.#tokens.length) {
             throw new StructError('Not enough values for structure');
         }
-        if (buffer.byteLength < (offset || 0) + this.size) {
+        if (buffer.length < (offset || 0) + this.size) {
             throw new StructError('Structure larger than remaining buffer');
         }
-        const view = new DataView(buffer, offset);
+        const view = new DataView(buffer.buffer, offset);
         new Uint8Array(buffer, offset, this.size).fill(0);
         this.#tokens.forEach((token, index) => token.pack(view, token.offset, token.size, this.#littleEndian, values[index]));
     }
 
     pack(...values) {
-        const buffer = new ArrayBuffer(this.size);
+        const buffer = new Uint8Array(this.size);
         this.packInto(buffer, 0, ...values);
         return buffer;
     }
@@ -157,7 +151,7 @@ class Struct {
     }
 
     *iterUnpack(buffer) {
-        for (let offset = 0; offset + this.size <= buffer.byteLength; offset += this.size) {
+        for (let offset = 0; offset + this.size <= buffer.length; offset += this.size) {
             yield this.unpackFrom(buffer, offset);
         }
     }
@@ -174,7 +168,7 @@ const NXDT = {
     ABI: {
         MAJOR: 1,
         MINOR: 2,
-        MAGIC: strEncode('NXDT', 'utf8')
+        TEXT: 'utf8'
     },
     COMMAND: {
         START_SESSION: 0,
@@ -203,14 +197,17 @@ const NXDT = {
     },
     TIME: {
         TOAST: 2000,
-        TRANSFER_ESTIMATE: 2000
+        TRANSFER_TIMEOUT: 10000,
+        TRANSFER_ESTIMATE: 2000,
     },
     VERSION: {
         MAJOR: 1,
-        MINOR: 1,
+        MINOR: 2,
         MICRO: 0
     }
 }
+
+NXDT.ABI.MAGIC = strEncode('NXDT', NXDT.ABI.TEXT);
 
 NXDT.STRUCT = {
     STATUS_RESPONSE: new Struct('<4sIH6x'),
@@ -240,6 +237,13 @@ function notify(message, important) {
     clearTimeout(toast.timeout);
     toast.togglePopover(true);
     toast.timeout = setTimeout(() => toast.togglePopover(false), NXDT.TIME.TOAST);
+}
+
+function promiseTimeout(promise, timeout) {
+    return new Promise((resolve, reject) => {
+        const id = setTimeout(() => reject(new Error('Promise timeout')), timeout);
+        promise.then(resolve, reject).finally(() => clearTimeout(id));
+    })
 }
 
 async function makeFile(dir, filePath) {
@@ -316,6 +320,20 @@ class NxdtUsb {
         console.debug('Opened: USB device');
     }
 
+    async reset() {
+        console.debug('Reseting: USB device');
+
+        try {
+            await this.device.reset();
+        } catch (e) {
+            console.warn(e)
+            await this.close();
+            await this.open();
+        }
+
+        console.debug('Reset: USB device');
+    }
+
     async close() {
         console.debug('Closing: USB device');
 
@@ -326,20 +344,24 @@ class NxdtUsb {
         console.debug('Closed: USB device');
     }
 
-    async read(size) {
-        const transfer = await this.device.transferIn(this.endpoint.in, size);
+    async read(size, timeout = -1) {
+        let promise = this.device.transferIn(this.endpoint.in, size);
+        if (timeout >= 0) promise = promiseTimeout(promise, timeout);
+        const transfer = await promise.catch(() => this.reset());
         assert(transfer.status == 'ok', 'USB.read (error)');
-        return transfer.data.buffer.transfer();
+        return new Uint8Array(transfer.data.buffer);
     }
 
-    async write(data) {
-        const transfer = await this.device.transferOut(this.endpoint.out, data);
+    async write(data, timeout = -1) {
+        let promise = this.device.transferOut(this.endpoint.out, data);
+        if (timeout >= 0) promise = promiseTimeout(promise, timeout);
+        const transfer = await promise.catch(() => this.reset());
         assert(transfer.status == 'ok', 'USB.write (error)');
         return transfer.bytesWritten;
     }
 
-    isAlignedToPacket(value) {
-        return (value & (this.packetSize - 1)) == 0;
+    isAlignedToPacket(size) {
+        return (size & (this.packetSize - 1)) == 0;
     }
 }
 
@@ -392,7 +414,9 @@ class NxdtTransfer extends NxdtDialog {
         this.progressLabel.innerText = `${Math.floor(perc * 100)} %`;
 
         const elapsedTime = Date.now() - this.startTime;
-        if (elapsedTime < NXDT.TIME.TRANSFER_ESTIMATE) {
+        if (this.progess.value == this.progess.max) {
+            this.progressTime.innerText = 'finishing…';
+        } else if (elapsedTime < NXDT.TIME.TRANSFER_ESTIMATE) {
             this.progressTime.innerText = 'estimating…';
         } else {
             const remaindTime = (elapsedTime / perc) * (1 - perc);
@@ -431,9 +455,9 @@ class NxdtSession {
         console.debug(`Sening: status (${code})`)
 
         const status = NXDT.STRUCT.STATUS_RESPONSE.pack(NXDT.ABI.MAGIC, code, this.device.packetSize);
-        const wr = await this.device.write(status);
+        const wr = await this.device.write(status, NXDT.TIME.TRANSFER_TIMEOUT);
 
-        assert(wr == status.byteLength, 'Failed to send status code!');
+        assert(wr == status.length, 'Failed to send status code!');
         console.debug(`Send: status`)
     }
 
@@ -441,7 +465,7 @@ class NxdtSession {
         console.debug('Receiving: command header');
 
         const cmdHeader = await this.device.read(NXDT.SIZE.COMMAND_HEADER);
-        assert(cmdHeader.byteLength == NXDT.SIZE.COMMAND_HEADER, `Failed to read command header! (got=${cmdHeader.byteLength} expect=${NXDT.SIZE.COMMAND_HEADER})`);
+        assert(cmdHeader.length == NXDT.SIZE.COMMAND_HEADER, `Failed to read command header! (got=${cmdHeader.length} expect=${NXDT.SIZE.COMMAND_HEADER})`);
 
         console.debug('Received: command header');
         return cmdHeader;
@@ -449,12 +473,12 @@ class NxdtSession {
 
     async parseCmdHeader(cmdHeader) {
         console.debug('Parsing: command header');
-        assert(cmdHeader && cmdHeader.byteLength == NXDT.SIZE.COMMAND_HEADER, `Command header is the wrong size! (got=${cmdHeader.byteLength} expect=${NXDT.SIZE.COMMAND_HEADER})`);
+        assert(cmdHeader && cmdHeader.length == NXDT.SIZE.COMMAND_HEADER, `Command header is the wrong size! (got=${cmdHeader.length} expect=${NXDT.SIZE.COMMAND_HEADER})`);
 
         const [magic, cmdId, cmdDataSize, _] = NXDT.STRUCT.COMMAND_HEADER.unpack(cmdHeader);
-        console.debug(`Parsed: command header (magic=${bytesDecode(magic, 'utf8')}, cmdId=${cmdId}, cmdDataSize=${cmdDataSize})`);
+        console.debug(`Parsed: command header (magic=${bytesDecode(magic, NXDT.ABI.TEXT)}, cmdId=${cmdId}, cmdDataSize=${cmdDataSize})`);
 
-        await this.assert(bytesEquals(magic, NXDT.ABI.MAGIC), NXDT.STATUS.INVALID_MAGIC_WORD);
+        await this.assert(aryEquals(magic, NXDT.ABI.MAGIC), NXDT.STATUS.INVALID_MAGIC_WORD);
         await this.assert(Object.values(NXDT.COMMAND).includes(cmdId), NXDT.STATUS.UNSUPPORTED_CMD);
 
         return [cmdId, cmdDataSize];
@@ -469,8 +493,8 @@ class NxdtSession {
             rdSize += 1;
         }
 
-        const cmdData = cmdDataSize ? await this.device.read(rdSize) : new ArrayBuffer();
-        assert(cmdData.byteLength == cmdDataSize, `Failed to read ${cmdDataSize}-byte long command block!`);
+        const cmdData = cmdDataSize ? await this.device.read(rdSize, NXDT.TIME.TRANSFER_TIMEOUT) : new Uint8Array();
+        assert(cmdData.length == cmdDataSize, `Failed to read ${cmdDataSize}-byte long command block!`);
 
         console.debug('Received: command block');
         return cmdData;
@@ -512,11 +536,11 @@ class NxdtSession {
 
     async parseFileHeader(cmdId, cmdData) {
         console.debug('Parsing: file header');
-        await this.assert(cmdId == NXDT.COMMAND.FILE_TRANSFER && cmdData.byteLength == NXDT.SIZE.FILE_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId == NXDT.COMMAND.FILE_TRANSFER && cmdData.length == NXDT.SIZE.FILE_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
 
         const [fileSize, filePathLength, headerSize] = NXDT.STRUCT.FILE_HEADER.unpackFrom(cmdData, 0);
         const rawFilePath = new Struct(`<${filePathLength}s`).unpackFrom(cmdData, 16)[0];
-        const filePath = bytesDecode(rawFilePath, 'utf8');
+        const filePath = bytesDecode(rawFilePath, NXDT.ABI.TEXT);
         console.debug(`Parsed: file header (fileSize=${fileSize}, filePathLength=${filePathLength}, headerSize=${headerSize})`);
 
         await this.assert(fileSize <= Number.MAX_SAFE_INTEGER, NXDT.STATUS.HOST_IO_ERROR);
@@ -543,10 +567,10 @@ class NxdtSession {
             }
 
             // Read current chunk
-            const chunk = await this.device.read(rdSize);
+            const chunk = await this.device.read(rdSize, NXDT.TIME.TRANSFER_TIMEOUT);
 
             // Check if we're dealing with a command
-            if (chunk.byteLength == NXDT.SIZE.COMMAND_HEADER) {
+            if (chunk.length == NXDT.SIZE.COMMAND_HEADER) {
                 let cmdId, cmdData;
                 try {
                     [cmdId, cmdData] = await this.getCmd(chunk);
@@ -559,8 +583,8 @@ class NxdtSession {
 
             // Write current chunk.
             await file.write(chunk);
-            offset += chunk.byteLength;
-            this.transfer.update(chunk.byteLength);
+            offset += chunk.length;
+            this.transfer.update(chunk.length);
         }
 
         await this.sendStatus(NXDT.STATUS.SUCCESS);
@@ -597,12 +621,12 @@ class NxdtSession {
             await this.handleCancelCmd(cmdId, cmdData);
         }
 
-        await this.assert(cmdId == NXDT.COMMAND.FILE_HEADER_TRANSFER && cmdData.byteLength == headerSize, NXDT.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId == NXDT.COMMAND.FILE_HEADER_TRANSFER && cmdData.length == headerSize, NXDT.STATUS.MALFORMED_CMD);
 
         await file.seek(0);
         await file.write(cmdData);
-        offset += cmdData.byteLength;
-        this.transfer.update(cmdData.byteLength);
+        offset += cmdData.length;
+        this.transfer.update(cmdData.length);
 
         await this.sendStatus(NXDT.STATUS.SUCCESS);
     }
@@ -627,10 +651,10 @@ class NxdtSession {
 
     async parseFsCmdHeader(cmdId, cmdData) {
         console.debug('Parsing: FS header');
-        await this.assert(cmdId == NXDT.COMMAND.START_FS_TRANSFER && cmdData.byteLength == NXDT.SIZE.START_FS_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId == NXDT.COMMAND.START_FS_TRANSFER && cmdData.length == NXDT.SIZE.START_FS_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
 
         const [fsSize, rawFsPath] = NXDT.STRUCT.FS_HEADER.unpack(cmdData);
-        const fsPath = strStrip(bytesDecode(rawFsPath, 'utf8'), '0');
+        const fsPath = strStrip(bytesDecode(rawFsPath, NXDT.ABI.TEXT), '0');
         await this.assert(fsSize <= Number.MAX_SAFE_INTEGER, NXDT.STATUS.HOST_IO_ERROR);
         console.info(`Parsed: fs header (fsSize=${fsSize}, fsPath=${fsPath})`);
 
@@ -676,18 +700,18 @@ class NxdtSession {
     }
 
     async handleEndFsCmd(cmdId, cmdData) {
-        await this.assert(cmdId == NXDT.COMMAND.END_FS_TRANSFER && cmdData.byteLength == 0, NXDT.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId == NXDT.COMMAND.END_FS_TRANSFER && cmdData.length == 0, NXDT.STATUS.MALFORMED_CMD);
         await this.sendStatus(NXDT.STATUS.SUCCESS);
     }
 
     /* SESSION */
     async handleStartSessionCmd(cmdId, cmdData) {
         console.debug('Handeling: session start command');
-        await this.assert(cmdId == NXDT.COMMAND.START_SESSION && cmdData.byteLength == NXDT.SIZE.START_SESSION_HEADER, NXDT.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId == NXDT.COMMAND.START_SESSION && cmdData.length == NXDT.SIZE.START_SESSION_HEADER, NXDT.STATUS.MALFORMED_CMD);
 
         const [versionMajor, versionMinor, versionMicro, abiVersion, rawVersionCommit] = NXDT.STRUCT.SESSION_HEADER.unpack(cmdData);
         const [abiMajor, abiMinor] = [((abiVersion >> 4) & 0x0F), (abiVersion & 0x0F)];
-        const versionCommit = strStrip(bytesDecode(rawVersionCommit, 'utf8'), '\0');
+        const versionCommit = strStrip(bytesDecode(rawVersionCommit, NXDT.ABI.TEXT), '\0');
         console.debug(`Parsed: client info (version=${versionMajor}.${versionMinor}.${versionMicro}, abi=${abiMajor}.${abiMinor}, commit=${versionCommit})`);
 
         await this.assert(abiMajor == NXDT.ABI.MAJOR && abiMinor == NXDT.ABI.MINOR, NXDT.STATUS.UNSUPPORTED_ABI_VERSION);
@@ -725,7 +749,7 @@ class NxdtSession {
     }
 
     async handleEndSessionCmd(cmdId, cmdData) {
-        await this.assert(cmdId == NXDT.COMMAND.END_SESSION && cmdData.byteLength == 0, NXDT.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId == NXDT.COMMAND.END_SESSION && cmdData.length == 0, NXDT.STATUS.MALFORMED_CMD);
 
         notify('Disconnecting device');
 
@@ -733,7 +757,7 @@ class NxdtSession {
     }
 
     async handleCancelCmd(cmdId, cmdData) {
-        await this.assert(cmdId == NXDT.COMMAND.CANCEL_TRANSFER && cmdData.byteLength == 0, NXDT.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId == NXDT.COMMAND.CANCEL_TRANSFER && cmdData.length == 0, NXDT.STATUS.MALFORMED_CMD);
 
         notify('Cancelling operation');
 
@@ -747,7 +771,7 @@ async function requestDirectory() {
     const request = new NxdtRequest('Destination directory');
     request.open();
     try {
-        currentDirectory = await window.showDirectoryPicker({ id: bytesDecode(NXDT.ABI.MAGIC), mode: 'readwrite', startIn: 'downloads' });
+        currentDirectory = await window.showDirectoryPicker({ id: bytesDecode(NXDT.ABI.MAGIC, NXDT.ABI.TEXT), mode: 'readwrite', startIn: 'downloads' });
     } catch (e) {
         return;
     } finally {
