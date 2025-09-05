@@ -398,7 +398,7 @@ class NxdtTransfer extends NxdtDialog {
         this.progess.value = 0;
         this.progess.max = size;
         this.progressLabel = this.dialog.querySelector('#transfer-progress');
-        this.progressTime = this.dialog.querySelector('#transfer-time');
+        this.progressStatus = this.dialog.querySelector('#transfer-status');
 
         this.startTime = Date.now();
         this.update(0);
@@ -410,18 +410,17 @@ class NxdtTransfer extends NxdtDialog {
 
     update(increment) {
         this.progess.value += increment;
-        const perc = this.progess.value / this.progess.max;
-        this.progressLabel.innerText = `${Math.floor(perc * 100)} %`;
+        this.progressLabel.innerText = `${Math.floor(this.progess.position * 100)} %`;
 
         const elapsedTime = Date.now() - this.startTime;
-        if (this.progess.value == this.progess.max) {
-            this.progressTime.innerText = 'finishing…';
-        } else if (elapsedTime < NXDT.TIME.TRANSFER_ESTIMATE) {
-            this.progressTime.innerText = 'estimating…';
-        } else {
-            const remaindTime = (elapsedTime / perc) * (1 - perc);
-            this.progressTime.innerText = this.#formatTime(remaindTime / 1000);
-        }
+        const remainingTime = (elapsedTime / this.progess.position) * (1 - this.progess.position);
+
+        const displayTime = (elapsedTime < NXDT.TIME.TRANSFER_ESTIMATE) ? 'estimating…' : this.#formatTime(remainingTime / 1000);
+        this.setText(`Time remaining: ${displayTime}`);
+    }
+
+    setText(value) {
+        this.progressStatus.innerText = value;
     }
 }
 
@@ -524,7 +523,7 @@ class NxdtSession {
             } else {
                 await this.handleFileTransfer(file, fileSize);
             }
-            notify('Finishing transfer');
+            this.transfer.setText('Finishing…');
         } finally {
             await file.close();
             this.transfer.close();
@@ -759,7 +758,7 @@ class NxdtSession {
     async handleCancelCmd(cmdId, cmdData) {
         await this.assert(cmdId == NXDT.COMMAND.CANCEL_TRANSFER && cmdData.length == 0, NXDT.STATUS.MALFORMED_CMD);
 
-        notify('Cancelling operation');
+        this.transfer.setText('Cancelling…');
 
         await this.sendStatus(NXDT.STATUS.SUCCESS);
         throw new NxdtCancelCmd();
