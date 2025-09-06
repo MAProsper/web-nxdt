@@ -524,7 +524,11 @@ class NxdtSession {
                 await this.handleFileTransfer(file, fileSize);
             }
             this.transfer.setText('Finishing…');
+        } catch (e) {
+            this.transfer.setText('Cancelling…');
+            throw e;
         } finally {
+            console.log('File: flushing to disk');
             await file.close();
             this.transfer.close();
             delete this.transfer;
@@ -756,6 +760,7 @@ class NxdtSession {
     }
 
     async handleCancelCmd(cmdId, cmdData) {
+        console.debug('Handeling: cancel command');
         await this.assert(cmdId == NXDT.COMMAND.CANCEL_TRANSFER && cmdData.length == 0, NXDT.STATUS.MALFORMED_CMD);
 
         this.transfer.setText('Cancelling…');
