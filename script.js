@@ -86,7 +86,7 @@ class Struct {
     static pack_d(view, offset, size, littleEndian, value) { view.setFloat64(offset, value, littleEndian) }
     static unpack_d(view, offset, size, littleEndian) { return view.getFloat64(offset, littleEndian) }
     static sizeof_s(count) { return { reps: 1, size: count } }
-    static pack_s(view, offset, size, littleEndian, value) { new Uint8Array(view.buffer, view.byteOffset + offset, size).set(new Uint8Array(value, 0, size)) }
+    static pack_s(view, offset, size, littleEndian, value) { new Uint8Array(view.buffer, view.byteOffset + offset, size).set(value.slice(undefined, size)) }
     static unpack_s(view, offset, size, littleEndian) { return new Uint8Array(view.buffer, view.byteOffset + offset, size).slice() }
     static sizeof_p(count) { return { reps: 1, size: count } }
     static pack_p(view, offset, size, littleEndian, value) { view.setUint8(offset, value.length); Struct.pack_s(view, offset + 1, size - 1, value) }
@@ -203,7 +203,7 @@ const NXDT = {
     VERSION: {
         MAJOR: 1,
         MINOR: 2,
-        MICRO: 1
+        MICRO: 2
     }
 }
 
