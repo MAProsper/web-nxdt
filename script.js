@@ -202,8 +202,8 @@ const NXDT = {
     },
     VERSION: {
         MAJOR: 1,
-        MINOR: 2,
-        MICRO: 3
+        MINOR: 3,
+        MICRO: 0
     }
 }
 
@@ -923,12 +923,8 @@ function syncNotify() {
 
 function platformInfo() {
     const version = `${NXDT.VERSION.MAJOR}.${NXDT.VERSION.MINOR}.${NXDT.VERSION.MICRO}`;
-    const system = navigator?.userAgentData?.platform || 'unknown';
 
-    let browser = navigator?.userAgentData?.brands?.at(-1);
-    browser = browser ? `${browser.brand} (${browser.version})` : 'unknown';
-
-    console.debug(`Platform: version=${version}, system=${system}, browser=${browser}`);
+    console.debug(`Platform: version=${version}, browser=${navigator.userAgent}`);
 }
 
 function browserSupport() {
