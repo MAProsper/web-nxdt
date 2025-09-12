@@ -25,75 +25,74 @@ function aryEquals(ary1, ary2) {
 }
 
 // === STRUCT ===
-
 /* Based on https://github.com/lyngklip/structjs */
-class StructError extends Error { }
-
 class Struct {
     static #reToken = /([1-9]\d*)?([xcbB?hHiIlLqQefdsp])/g;
     static #reFormat = /^([<>])?(([1-9]\d*)?([xcbB?hHiIlLqQefdsp]))*$/;
 
     static sizeof_x(count) { return { reps: 1, size: count } }
+    // static pack_x(bytes, value, offset = 0, size = Struct.sizeof_x(1).size, littleEndian = true) { Struct.pack_B(bytes, 0, offset, size, littleEndian) }
+    // static unpack_x(bytes, offset = 0, size = Struct.sizeof_x(1).size, littleEndian = true) { Struct.unpack_B(bytes, offset, size, littleEndian) }
     static sizeof_c(count) { return { reps: count, size: 1 } }
-    static pack_c(view, offset, size, littleEndian, value) { Struct.pack_s(view, offset, 1, value) }
-    static unpack_c(view, offset, size, littleEndian) { return Struct.unpack_s(view, offset, 1) }
+    static pack_c(bytes, value, offset = 0, size = Struct.sizeof_c(1).size, littleEndian = true) { Struct.pack_s(bytes, value, offset, 1, littleEndian) }
+    static unpack_c(bytes, offset = 0, size = Struct.sizeof_c(1).size, littleEndian = true) { return Struct.unpack_s(bytes, offset, 1, littleEndian) }
     static sizeof_bool(count) { return { reps: count, size: 1 } }
-    static pack_bool(view, offset, size, littleEndian, value) { view.setUint8(offset, Boolean(value)) }
-    static unpack_bool(view, offset, size, littleEndian) { return Boolean(view.getInt8(offset)) }
+    static pack_bool(bytes, value, offset = 0, size = Struct.sizeof_bool(1).size, littleEndian = true) { new DataView(bytes.buffer).setUint8(offset, Boolean(value)) }
+    static unpack_bool(bytes, offset = 0, size = Struct.sizeof_bool(1).size, littleEndian = true) { return Boolean(new DataView(bytes.buffer).getInt8(offset)) }
     static sizeof_b(count) { return { reps: count, size: 1 } }
-    static pack_b(view, offset, size, littleEndian, value) { view.setInt8(offset, value) }
-    static unpack_b(view, offset, size, littleEndian) { return view.getInt8(offset) }
+    static pack_b(bytes, value, offset = 0, size = Struct.sizeof_b(1).size, littleEndian = true) { new DataView(bytes.buffer).setInt8(offset, value) }
+    static unpack_b(bytes, offset = 0, size = Struct.sizeof_b(1).size, littleEndian = true) { return new DataView(bytes.buffer).getInt8(offset) }
     static sizeof_B(count) { return { reps: count, size: 1 } }
-    static pack_B(view, offset, size, littleEndian, value) { view.setUint8(offset, value) }
-    static unpack_B(view, offset, size, littleEndian) { return view.getUint8(offset) }
+    static pack_B(bytes, value, offset = 0, size = Struct.sizeof_B(1).size, littleEndian = true) { new DataView(bytes.buffer).setUint8(offset, value) }
+    static unpack_B(bytes, offset = 0, size = Struct.sizeof_B(1).size, littleEndian = true) { return new DataView(bytes.buffer).getUint8(offset) }
     static sizeof_h(count) { return { reps: count, size: 2 } }
-    static pack_h(view, offset, size, littleEndian, value) { view.setInt16(offset, value, littleEndian) }
-    static unpack_h(view, offset, size, littleEndian) { return view.getInt16(offset, littleEndian) }
+    static pack_h(bytes, value, offset = 0, size = Struct.sizeof_h(1).size, littleEndian = true) { new DataView(bytes.buffer).setInt16(offset, value, littleEndian) }
+    static unpack_h(bytes, offset = 0, size = Struct.sizeof_h(1).size, littleEndian = true) { return new DataView(bytes.buffer).getInt16(offset, littleEndian) }
     static sizeof_H(count) { return { reps: count, size: 2 } }
-    static pack_H(view, offset, size, littleEndian, value) { view.setUint16(offset, value, littleEndian) }
-    static unpack_H(view, offset, size, littleEndian) { return view.getUint16(offset, littleEndian) }
+    static pack_H(bytes, value, offset = 0, size = Struct.sizeof_H(1).size, littleEndian = true) { new DataView(bytes.buffer).setUint16(offset, value, littleEndian) }
+    static unpack_H(bytes, offset = 0, size = Struct.sizeof_H(1).size, littleEndian = true) { return new DataView(bytes.buffer).getUint16(offset, littleEndian) }
     static sizeof_i(count) { return { reps: count, size: 4 } }
-    static pack_i(view, offset, size, littleEndian, value) { view.setInt32(offset, value, littleEndian) }
-    static unpack_i(view, offset, size, littleEndian) { return view.getInt32(offset, littleEndian) }
+    static pack_i(bytes, value, offset = 0, size = Struct.sizeof_i(1).size, littleEndian = true) { new DataView(bytes.buffer).setInt32(offset, value, littleEndian) }
+    static unpack_i(bytes, offset = 0, size = Struct.sizeof_i(1).size, littleEndian = true) { return new DataView(bytes.buffer).getInt32(offset, littleEndian) }
     static sizeof_I(count) { return { reps: count, size: 4 } }
-    static pack_I(view, offset, size, littleEndian, value) { view.setUint32(offset, value, littleEndian) }
-    static unpack_I(view, offset, size, littleEndian) { return view.getUint32(offset, littleEndian) }
+    static pack_I(bytes, value, offset = 0, size = Struct.sizeof_I(1).size, littleEndian = true) { new DataView(bytes.buffer).setUint32(offset, value, littleEndian) }
+    static unpack_I(bytes, offset = 0, size = Struct.sizeof_I(1).size, littleEndian = true) { return new DataView(bytes.buffer).getUint32(offset, littleEndian) }
     static sizeof_l(count) { return { reps: count, size: 4 } }
-    static pack_l(view, offset, size, littleEndian, value) { view.setInt32(offset, value, littleEndian) }
-    static unpack_l(view, offset, size, littleEndian) { return view.getInt32(offset, littleEndian) }
+    static pack_l(bytes, value, offset = 0, size = Struct.sizeof_l(1).size, littleEndian = true) { new DataView(bytes.buffer).setInt32(offset, value, littleEndian) }
+    static unpack_l(bytes, offset = 0, size = Struct.sizeof_l(1).size, littleEndian = true) { return new DataView(bytes.buffer).getInt32(offset, littleEndian) }
     static sizeof_L(count) { return { reps: count, size: 4 } }
-    static pack_L(view, offset, size, littleEndian, value) { view.setUint32(offset, value, littleEndian) }
-    static unpack_L(view, offset, size, littleEndian) { return view.getUint32(offset, littleEndian) }
+    static pack_L(bytes, value, offset = 0, size = Struct.sizeof_L(1).size, littleEndian = true) { new DataView(bytes.buffer).setUint32(offset, value, littleEndian) }
+    static unpack_L(bytes, offset = 0, size = Struct.sizeof_L(1).size, littleEndian = true) { return new DataView(bytes.buffer).getUint32(offset, littleEndian) }
     static sizeof_q(count) { return { reps: count, size: 8 } }
-    static pack_q(view, offset, size, littleEndian, value) { view.setBigInt64(offset, value, littleEndian) }
-    static unpack_q(view, offset, size, littleEndian) { return view.getBigInt64(offset, littleEndian) }
+    static pack_q(bytes, value, offset = 0, size = Struct.sizeof_q(1).size, littleEndian = true) { new DataView(bytes.buffer).setBigInt64(offset, value, littleEndian) }
+    static unpack_q(bytes, offset = 0, size = Struct.sizeof_q(1).size, littleEndian = true) { return new DataView(bytes.buffer).getBigInt64(offset, littleEndian) }
     static sizeof_qn(count) { return Struct.sizeof_q(count) }
-    static pack_qn(view, offset, size, littleEndian, value) { Struct.pack_q(view, offset, size, littleEndian, BigInt(value)) }
-    static unpack_qn(view, offset, size, littleEndian) { return Number(Struct.unpack_q(view, offset, size, littleEndian)) }
+    static pack_qn(bytes, value, offset = 0, size = Struct.sizeof_qn(1).size, littleEndian = true) { Struct.pack_q(bytes, BigInt(value), offset, size, littleEndian) }
+    static unpack_qn(bytes, offset = 0, size = Struct.sizeof_qn(1).size, littleEndian = true) { return Number(Struct.unpack_q(bytes, offset, size, littleEndian)) }
     static sizeof_Q(count) { return { reps: count, size: 8 } }
-    static pack_Q(view, offset, size, littleEndian, value) { view.setBigUint64(offset, value, littleEndian) }
-    static unpack_Q(view, offset, size, littleEndian) { return view.getBigUint64(offset, littleEndian) }
+    static pack_Q(bytes, value, offset = 0, size = Struct.sizeof_Q(1).size, littleEndian = true) { new DataView(bytes.buffer).setBigUint64(offset, value, littleEndian) }
+    static unpack_Q(bytes, offset = 0, size = Struct.sizeof_Q(1).size, littleEndian = true) { return new DataView(bytes.buffer).getBigUint64(offset, littleEndian) }
     static sizeof_Qn(count) { return Struct.sizeof_Q(count) }
-    static pack_Qn(view, offset, size, littleEndian, value) { Struct.pack_Q(view, offset, size, littleEndian, BigInt(value)) }
-    static unpack_Qn(view, offset, size, littleEndian) { return Number(Struct.unpack_Q(view, offset, size, littleEndian)) }
+    static pack_Qn(bytes, value, offset = 0, size = Struct.sizeof_Qn(1).size, littleEndian = true) { Struct.pack_Q(bytes, BigInt(value), offset, size, littleEndian) }
+    static unpack_Qn(bytes, offset = 0, size = Struct.sizeof_Qn(1).size, littleEndian = true) { return Number(Struct.unpack_Q(bytes, offset, size, littleEndian)) }
     static sizeof_e(count) { return { reps: count, size: 2 } }
-    static pack_e(view, offset, size, littleEndian, value) { view.setFloat16(offset, value, littleEndian) }
-    static unpack_e(view, offset, size, littleEndian) { return view.getFloat16(offset, littleEndian) }
+    static pack_e(bytes, value, offset = 0, size = Struct.sizeof_e(1).size, littleEndian = true) { new DataView(bytes.buffer).setFloat16(offset, value, littleEndian) }
+    static unpack_e(bytes, offset = 0, size = Struct.sizeof_e(1).size, littleEndian = true) { return new DataView(bytes.buffer).getFloat16(offset, littleEndian) }
     static sizeof_f(count) { return { reps: count, size: 4 } }
-    static pack_f(view, offset, size, littleEndian, value) { view.setFloat32(offset, value, littleEndian) }
-    static unpack_f(view, offset, size, littleEndian) { return view.getFloat32(offset, littleEndian) }
+    static pack_f(bytes, value, offset = 0, size = Struct.sizeof_f(1).size, littleEndian = true) { new DataView(bytes.buffer).setFloat32(offset, value, littleEndian) }
+    static unpack_f(bytes, offset = 0, size = Struct.sizeof_f(1).size, littleEndian = true) { return new DataView(bytes.buffer).getFloat32(offset, littleEndian) }
     static sizeof_d(count) { return { reps: count, size: 8 } }
-    static pack_d(view, offset, size, littleEndian, value) { view.setFloat64(offset, value, littleEndian) }
-    static unpack_d(view, offset, size, littleEndian) { return view.getFloat64(offset, littleEndian) }
+    static pack_d(bytes, value, offset = 0, size = Struct.sizeof_d(1).size, littleEndian = true) { new DataView(bytes.buffer).setFloat64(offset, value, littleEndian) }
+    static unpack_d(bytes, offset = 0, size = Struct.sizeof_d(1).size, littleEndian = true) { return new DataView(bytes.buffer).getFloat64(offset, littleEndian) }
     static sizeof_s(count) { return { reps: 1, size: count } }
-    static pack_s(view, offset, size, littleEndian, value) { new Uint8Array(view.buffer, view.byteOffset + offset, size).set(value.slice(undefined, size)) }
-    static unpack_s(view, offset, size, littleEndian) { return new Uint8Array(view.buffer, view.byteOffset + offset, size).slice() }
+    static pack_s(bytes, value, offset = 0, size = Struct.sizeof_s(1).size, littleEndian = true) { bytes.set(new Uint8Array(value.buffer, value.byteOffset, Math.min(value.length, size)), offset); bytes.fill(0, offset + value.length, offset + size) }
+    static unpack_s(bytes, offset = 0, size = Struct.sizeof_s(1).size, littleEndian = true) { if (bytes.length < (offset + size)) throw new RangeError('Structure larger than remaining buffer'); return bytes.slice(offset, offset + size) }
     static sizeof_p(count) { return { reps: 1, size: count } }
-    static pack_p(view, offset, size, littleEndian, value) { view.setUint8(offset, value.length); Struct.pack_s(view, offset + 1, size - 1, value) }
-    static unpack_p(view, offset, size, littleEndian) { return Struct.unpack_s(view, offset + 1, Math.min(view.getUint8(offset), size - 1)) }
+    static pack_p(bytes, value, offset = 0, size = Struct.sizeof_p(1).size, littleEndian = true) { Struct.pack_B(bytes, value.length, offset, 1, littleEndian); Struct.pack_s(bytes, value, offset + 1, size - 1, littleEndian) }
+    static unpack_p(bytes, offset = 0, size = Struct.sizeof_p(1).size, littleEndian = true) { return Struct.unpack_s(bytes, offset + 1, Math.min(Struct.unpack_B(bytes, offset, 1, littleEndian), size - 1), littleEndian) }
 
     size = 0;
-    #tokens = [];
+    tokens = [];
     #littleEndian = false;
     #map = { '?': 'bool', 'q': 'qn', 'Q': 'Qn' };
 
@@ -101,11 +100,13 @@ class Struct {
         this.format = format;
         Object.assign(this.#map, map);
 
+        Struct.#reFormat.lastIndex = 0;
         let match = Struct.#reFormat.exec(format);
-        if (!match) { throw new StructError('Invalid format string') }
+        if (!match) { throw new Error('Invalid format string') }
 
         this.#littleEndian = '<' === match[1];
 
+        Struct.#reToken.lastIndex = 0;
         while (match = Struct.#reToken.exec(format)) {
             let [count, format] = match.slice(1);
             count = count ? parseInt(count, 10) : 1;
@@ -115,44 +116,40 @@ class Struct {
             const [pack, unpack] = [Struct[`pack_${format}`], Struct[`unpack_${format}`]];
 
             for (let i = 0; i < reps; ++i, this.size += size) {
-                if (pack) this.#tokens.push({ pack, unpack, offset: this.size, size });
+                if (!pack) continue;
+                const structOffset = this.size;
+                this.tokens.push({
+                    pack: (bytes, value, offset = 0) => pack(bytes, value, offset + structOffset, size, this.#littleEndian),
+                    unpack: (bytes, offset = 0) => unpack(bytes, offset + structOffset, size, this.#littleEndian)
+                });
             }
         }
     }
 
-    unpackFrom(buffer, offset) {
-        if (buffer.length < (offset || 0) + this.size) {
-            throw new StructError('Structure larger than remaining buffer');
-        }
-        const view = new DataView(buffer.buffer, offset || 0);
-        return this.#tokens.map(token => token.unpack(view, token.offset, token.size, this.#littleEndian));
+    unpackFrom(bytes, offset) {
+        bytes = new Uint8Array(bytes.buffer, offset, this.size);
+        return this.tokens.map(token => token.unpack(bytes));
     }
 
-    packInto(buffer, offset, ...values) {
-        if (values.length < this.#tokens.length) {
-            throw new StructError('Not enough values for structure');
-        }
-        if (buffer.length < (offset || 0) + this.size) {
-            throw new StructError('Structure larger than remaining buffer');
-        }
-        const view = new DataView(buffer.buffer, offset);
-        new Uint8Array(buffer, offset, this.size).fill(0);
-        this.#tokens.forEach((token, index) => token.pack(view, token.offset, token.size, this.#littleEndian, values[index]));
+    packInto(bytes, offset, ...values) {
+        bytes = new Uint8Array(bytes.buffer, offset, this.size);
+        bytes.fill(0);
+        this.tokens.forEach((token, index) => token.pack(bytes, values[index]));
     }
 
     pack(...values) {
-        const buffer = new Uint8Array(this.size);
-        this.packInto(buffer, 0, ...values);
-        return buffer;
+        const bytes = new Uint8Array(this.size);
+        this.packInto(bytes, 0, ...values);
+        return bytes;
     }
 
-    unpack(buffer) {
-        return this.unpackFrom(buffer, 0);
+    unpack(bytes) {
+        return this.unpackFrom(bytes, 0);
     }
 
-    *iterUnpack(buffer) {
-        for (let offset = 0; offset + this.size <= buffer.length; offset += this.size) {
-            yield this.unpackFrom(buffer, offset);
+    *iterUnpack(bytes) {
+        for (let offset = 0; offset + this.size <= bytes.length; offset += this.size) {
+            yield this.unpackFrom(bytes, offset);
         }
     }
 }
@@ -180,12 +177,8 @@ const NXDT = {
         END_FS_TRANSFER: 6,
     },
     SIZE: {
-        COMMAND_HEADER: 0x10,
-        START_SESSION_HEADER: 0x10,
-        FILE_TRANSFER_HEADER: 0x320,
-        START_FS_TRANSFER_HEADER: 0x310,
         FILE_BLOCK_TRANSFER: 0x800000,
-        FILE_NAME_LENGTH: 0x300,
+        FILE_PATH_LENGTH: 0x301,
     },
     STATUS: {
         SUCCESS: 0,
@@ -210,11 +203,11 @@ const NXDT = {
 NXDT.ABI.MAGIC = strEncode('NXDT', NXDT.ABI.TEXT);
 
 NXDT.STRUCT = {
-    STATUS_RESPONSE: new Struct('<4sIH6x'),
     COMMAND_HEADER: new Struct('<4sIII'),
-    FILE_HEADER: new Struct('<QII'),
-    FS_HEADER: new Struct(`<Q${NXDT.SIZE.FILE_NAME_LENGTH}s`),
-    SESSION_HEADER: new Struct('<BBBB8s')
+    STATUS_RESPONSE: new Struct('<4sIH6x'),
+    SESSION_HEADER: new Struct('<BBBB8s4x'),
+    FILE_HEADER: new Struct(`<QII${NXDT.SIZE.FILE_PATH_LENGTH}s15x`),
+    FS_HEADER: new Struct(`<Q${NXDT.SIZE.FILE_PATH_LENGTH}s7x`)
 }
 
 function assert(value, message) {
@@ -539,8 +532,8 @@ class NxdtSession {
     async getCmdHeader() {
         logger.debug('Receiving: command header');
 
-        const cmdHeader = await this.device.read(NXDT.SIZE.COMMAND_HEADER);
-        assert(cmdHeader.length == NXDT.SIZE.COMMAND_HEADER, `Failed to read command header! (got=${cmdHeader.length} expect=${NXDT.SIZE.COMMAND_HEADER})`);
+        const cmdHeader = await this.device.read(NXDT.STRUCT.COMMAND_HEADER.size);
+        assert(cmdHeader.length == NXDT.STRUCT.COMMAND_HEADER.size, `Failed to read command header! (got=${cmdHeader.length} expect=${NXDT.STRUCT.COMMAND_HEADER.size})`);
 
         logger.debug('Received: command header');
         return cmdHeader;
@@ -548,9 +541,9 @@ class NxdtSession {
 
     async parseCmdHeader(cmdHeader) {
         logger.debug('Parsing: command header');
-        assert(cmdHeader && cmdHeader.length == NXDT.SIZE.COMMAND_HEADER, `Command header is the wrong size! (got=${cmdHeader.length} expect=${NXDT.SIZE.COMMAND_HEADER})`);
+        assert(cmdHeader && cmdHeader.length == NXDT.STRUCT.COMMAND_HEADER.size, `Command header is the wrong size! (got=${cmdHeader.length} expect=${NXDT.STRUCT.COMMAND_HEADER.size})`);
 
-        const [magic, cmdId, cmdDataSize, _] = NXDT.STRUCT.COMMAND_HEADER.unpack(cmdHeader);
+        const [magic, cmdId, cmdDataSize, ..._] = NXDT.STRUCT.COMMAND_HEADER.unpack(cmdHeader);
         logger.debug(`Parsed: command header (magic=${bytesDecode(magic, NXDT.ABI.TEXT)}, cmdId=${cmdId}, cmdDataSize=${cmdDataSize})`);
 
         await this.assert(aryEquals(magic, NXDT.ABI.MAGIC), NXDT.STATUS.INVALID_MAGIC_WORD);
@@ -607,16 +600,15 @@ class NxdtSession {
 
     async parseFileHeader(cmdId, cmdData) {
         logger.debug('Parsing: file header');
-        await this.assert(cmdId == NXDT.COMMAND.FILE_TRANSFER && cmdData.length == NXDT.SIZE.FILE_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId == NXDT.COMMAND.FILE_TRANSFER && cmdData.length == NXDT.STRUCT.FILE_HEADER.size, NXDT.STATUS.MALFORMED_CMD);
 
-        const [fileSize, filePathLength, headerSize] = NXDT.STRUCT.FILE_HEADER.unpackFrom(cmdData, 0);
-        const rawFilePath = new Struct(`<${filePathLength}s`).unpackFrom(cmdData, 16)[0];
+        const [fileSize, filePathLength, headerSize, rawFilePath] = NXDT.STRUCT.FILE_HEADER.unpack(cmdData);
         const filePath = bytesDecode(rawFilePath, NXDT.ABI.TEXT);
         logger.debug(`Parsed: file header (fileSize=${fileSize}, filePathLength=${filePathLength}, headerSize=${headerSize}, filePath=${filePath})`);
 
         await this.assert(fileSize <= Number.MAX_SAFE_INTEGER, NXDT.STATUS.HOST_IO_ERROR);
         await this.assert(headerSize < fileSize, NXDT.STATUS.MALFORMED_CMD);
-        await this.assert(filePathLength > 0 && filePathLength <= NXDT.SIZE.FILE_NAME_LENGTH, NXDT.STATUS.MALFORMED_CMD);
+        await this.assert(filePathLength > 0 && filePathLength <= NXDT.SIZE.FILE_PATH_LENGTH, NXDT.STATUS.MALFORMED_CMD);
 
         return [filePath, fileSize, headerSize];
     }
@@ -633,8 +625,8 @@ class NxdtSession {
             }
 
             // Check if we're dealing with a command
-            if (chunk.length == NXDT.SIZE.COMMAND_HEADER) {
-                const [magic, ..._] = NXDT.STRUCT.COMMAND_HEADER.unpack(chunk);
+            if (chunk.length == NXDT.STRUCT.COMMAND_HEADER.size) {
+                const magic = NXDT.STRUCT.COMMAND_HEADER.tokens[0].unpack(chunk);
                 if (aryEquals(magic, NXDT.ABI.MAGIC)) {
                     const [cmdId, cmdData] = await this.getCmd(chunk);
                     await this.handleCancelCmd(cmdId, cmdData);
@@ -706,7 +698,7 @@ class NxdtSession {
 
     async parseFsCmdHeader(cmdId, cmdData) {
         logger.debug('Parsing: FS header');
-        await this.assert(cmdId == NXDT.COMMAND.START_FS_TRANSFER && cmdData.length == NXDT.SIZE.START_FS_TRANSFER_HEADER, NXDT.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId == NXDT.COMMAND.START_FS_TRANSFER && cmdData.length == NXDT.STRUCT.FS_HEADER.size, NXDT.STATUS.MALFORMED_CMD);
 
         const [fsSize, rawFsPath] = NXDT.STRUCT.FS_HEADER.unpack(cmdData);
         const fsPath = strStrip(bytesDecode(rawFsPath, NXDT.ABI.TEXT), '\0');
@@ -763,7 +755,7 @@ class NxdtSession {
     /* SESSION */
     async handleStartSessionCmd(cmdId, cmdData) {
         logger.debug('Handeling: session start command');
-        await this.assert(cmdId == NXDT.COMMAND.START_SESSION && cmdData.length == NXDT.SIZE.START_SESSION_HEADER, NXDT.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId == NXDT.COMMAND.START_SESSION && cmdData.length == NXDT.STRUCT.SESSION_HEADER.size, NXDT.STATUS.MALFORMED_CMD);
 
         const [versionMajor, versionMinor, versionMicro, abiVersion, rawVersionCommit] = NXDT.STRUCT.SESSION_HEADER.unpack(cmdData);
         const [abiMajor, abiMinor] = [((abiVersion >> 4) & 0x0F), (abiVersion & 0x0F)];
