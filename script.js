@@ -203,7 +203,7 @@ const NXDT = {
     VERSION: {
         MAJOR: 1,
         MINOR: 3,
-        MICRO: 1
+        MICRO: 2
     }
 }
 
@@ -297,7 +297,7 @@ class Logger {
     error(msg) { this.#record('error', msg); }
     trace(msg) { this.#record('trace', msg); }
 
-    toFile() {
+    export() {
         const stamp = strStrip(this.#stamp().replaceAll(/\D/g, '-'), '-');
         const fileName = `${document.title}-${stamp}.log`;
 
@@ -770,7 +770,10 @@ class NxdtSession {
         const versionCommit = strStrip(bytesDecode(rawVersionCommit, NXDT.ABI.TEXT), '\0');
         logger.debug(`Parsed: client info (version=${versionMajor}.${versionMinor}.${versionMicro}, abi=${abiMajor}.${abiMinor}, commit=${versionCommit})`);
 
-        await this.assert(abiMajor == NXDT.ABI.MAJOR && abiMinor == NXDT.ABI.MINOR, NXDT.STATUS.UNSUPPORTED_ABI_VERSION);
+        // Check if the abi versions match the ones used by nxdumptool.
+        // TODO: enable abi minor check whenever we're ready for a release.
+        // abiMinor == NXDT.ABI.MINOR
+        await this.assert(abiMajor == NXDT.ABI.MAJOR, NXDT.STATUS.UNSUPPORTED_ABI_VERSION);
         await this.sendStatus(NXDT.STATUS.SUCCESS);
     }
 
@@ -971,6 +974,8 @@ function platformInfo() {
     const version = `${NXDT.VERSION.MAJOR}.${NXDT.VERSION.MINOR}.${NXDT.VERSION.MICRO}`;
 
     logger.debug(`Platform: version=${version}, browser=${navigator.userAgent}`);
+
+    setValueText(debugButton, version);
 }
 
 function browserSupport() {
@@ -1008,24 +1013,23 @@ function deviceSupport() {
 }
 
 // Setup
-const logger = new Logger();
-
-platformInfo();
-browserSupport();
-deviceSupport();
-
 let currentDirectory;
 let currentDevice;
 let currentSession;
 
+const logger = new Logger();
 const directoryButton = document.getElementById('directory');
 const deviceButton = document.getElementById('device');
 const notifyButton = document.getElementById('notify');
 const debugButton = document.getElementById('debug');
 
+platformInfo();
+browserSupport();
+deviceSupport();
+
 directoryButton.addEventListener('click', requestDirectory);
 deviceButton.addEventListener('click', requestDevice);
 notifyButton.addEventListener('click', requestNotify);
-debugButton.addEventListener('click', () => logger.toFile());
+debugButton.addEventListener('click', () => logger.export());
 
 syncNotify();
