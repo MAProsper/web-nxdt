@@ -603,7 +603,7 @@ class NxdtSession {
         await this.assert(cmdId == NXDT.COMMAND.FILE_TRANSFER && cmdData.length == NXDT.STRUCT.FILE_HEADER.size, NXDT.STATUS.MALFORMED_CMD);
 
         const [fileSize, filePathLength, headerSize, rawFilePath] = NXDT.STRUCT.FILE_HEADER.unpack(cmdData);
-        const filePath = bytesDecode(rawFilePath, NXDT.ABI.TEXT);
+        const filePath = strStrip(bytesDecode(rawFilePath, NXDT.ABI.TEXT), '\0');
         logger.debug(`Parsed: file header (fileSize=${fileSize}, filePathLength=${filePathLength}, headerSize=${headerSize}, filePath=${filePath})`);
 
         await this.assert(fileSize <= Number.MAX_SAFE_INTEGER, NXDT.STATUS.HOST_IO_ERROR);
