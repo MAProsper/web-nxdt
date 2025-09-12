@@ -195,8 +195,8 @@ const NXDT = {
     },
     VERSION: {
         MAJOR: 1,
-        MINOR: 3,
-        MICRO: 2
+        MINOR: 4,
+        MICRO: 0
     }
 }
 
