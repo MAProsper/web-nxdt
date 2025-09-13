@@ -154,6 +154,42 @@ class Struct {
     }
 }
 
+// === LOGGER ===
+class Logger {
+    constructor(verbose = true) {
+        this.verbose = verbose;
+    }
+
+    records = [];
+
+    stamp(safe = false) {
+        let stamp = new Date().toISOString();
+        if (safe) stamp = strStrip(stamp.replaceAll(/\D/g, '-'), '-');
+        return stamp;
+    }
+
+    #format(lvl, msg) {
+        lvl = lvl.toUpperCase().padEnd(5);
+        if (msg instanceof Error) msg = msg.stack;
+        return `[${this.stamp()}] [${lvl}] ${msg}\n`;
+    }
+
+    #record(lvl, msg) {
+        if (this.verbose) console[lvl](msg);
+        this.records.push(this.#format(lvl, msg));
+    }
+
+    debug(msg) { this.#record('debug', msg); }
+    info(msg) { this.#record('info', msg); }
+    warn(msg) { this.#record('warn', msg); }
+    error(msg) { this.#record('error', msg); }
+    trace(msg) { this.#record('trace', msg); }
+
+    blob() {
+        return new Blob(this.records);
+    }
+}
+
 // === NXDT ===
 const NXDT = {
     DEVICE: {
@@ -196,7 +232,7 @@ const NXDT = {
     VERSION: {
         MAJOR: 1,
         MINOR: 4,
-        MICRO: 1
+        MICRO: 2
     }
 }
 
@@ -264,48 +300,6 @@ async function makeFile(dir, filePath) {
     }
 
     return await file.createWritable({ mode: 'exclusive' });
-}
-
-class Logger {
-    constructor(verbose = true) {
-        this.verbose = verbose;
-    }
-
-    history = [];
-
-    #stamp() {
-        return new Date().toISOString();
-    }
-
-    #record(lvl, msg) {
-        if (this.verbose) console[lvl](msg);
-        lvl = lvl.toUpperCase().padEnd(5);
-        if (msg instanceof Error) msg = msg.stack;
-        this.history.push(`[${this.#stamp()}] [${lvl}] ${msg}\n`);
-    }
-
-    debug(msg) { this.#record('debug', msg); }
-    info(msg) { this.#record('info', msg); }
-    warn(msg) { this.#record('warn', msg); }
-    error(msg) { this.#record('error', msg); }
-    trace(msg) { this.#record('trace', msg); }
-
-    export() {
-        const stamp = strStrip(this.#stamp().replaceAll(/\D/g, '-'), '-');
-        const fileName = `${document.title}-${stamp}.log`;
-
-        const blob = new Blob(this.history);
-        const url = URL.createObjectURL(blob);
-
-        const e = document.createElement('a');
-        e.download = fileName;
-        e.href = url;
-        document.body.appendChild(e);
-        e.click();
-        document.body.removeChild(e);
-
-        URL.revokeObjectURL(url);
-    }
 }
 
 class NxdtError extends Error { }
@@ -886,6 +880,23 @@ async function requestNotify() {
     }
 }
 
+function requestDebug() {
+    const fileName = `${document.title}-${logger.stamp(true)}.log`;
+    const blobUrl = URL.createObjectURL(logger.blob());
+
+    const e = document.createElement('a');
+    e.download = fileName;
+    e.href = blobUrl;
+    document.body.appendChild(e);
+    try {
+        e.click();
+    } finally {
+        document.body.removeChild(e);
+    }
+
+    URL.revokeObjectURL(blobUrl);
+}
+
 async function closeDevice() {
     setValueText(deviceButton, 'Not connected');
     await currentDevice.close();
@@ -1022,6 +1033,6 @@ deviceSupport();
 directoryButton.addEventListener('click', requestDirectory);
 deviceButton.addEventListener('click', requestDevice);
 notifyButton.addEventListener('click', requestNotify);
-debugButton.addEventListener('click', () => logger.export());
+debugButton.addEventListener('click', requestDebug);
 
 syncNotify();
