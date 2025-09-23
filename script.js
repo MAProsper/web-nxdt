@@ -232,7 +232,7 @@ const NXDT = {
     VERSION: {
         MAJOR: 1,
         MINOR: 4,
-        MICRO: 3
+        MICRO: 4
     }
 }
 
@@ -974,9 +974,7 @@ function syncNotify() {
 }
 
 async function syncWorker() {
-    let swReg;
-    swReg = await navigator.serviceWorker.register('sw.js');
-    swReg = await swReg.update();
+    await navigator.serviceWorker.register('sw.js');
 }
 
 function platformInfo() {
