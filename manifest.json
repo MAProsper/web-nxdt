@@ -1,15 +1,13 @@
 {
     "short_name": "Web-NXDT",
     "name": "Web-NXDT - NXDumpTool USB host",
+    "display": "standalone",
+    "start_url": ".",
     "icons": [
         {
             "src": "favicon.png",
             "sizes": "144x144",
             "type": "image/png"
         }
-    ],
-    "start_url": ".",
-    "display": "standalone",
-    "theme_color": "#2d2d2d",
-    "background_color": "#2d2d2d"
+    ]
 }
