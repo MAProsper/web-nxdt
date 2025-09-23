@@ -232,7 +232,7 @@ const NXDT = {
     VERSION: {
         MAJOR: 1,
         MINOR: 4,
-        MICRO: 2
+        MICRO: 3
     }
 }
 
@@ -973,6 +973,12 @@ function syncNotify() {
     return allowed;
 }
 
+async function syncWorker() {
+    let swReg;
+    swReg = await navigator.serviceWorker.register('sw.js');
+    swReg = await swReg.update();
+}
+
 function platformInfo() {
     const version = `${NXDT.VERSION.MAJOR}.${NXDT.VERSION.MINOR}.${NXDT.VERSION.MICRO}`;
 
@@ -1036,3 +1042,4 @@ notifyButton.addEventListener('click', requestNotify);
 debugButton.addEventListener('click', requestDebug);
 
 syncNotify();
+syncWorker();

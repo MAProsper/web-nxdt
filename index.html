@@ -4,14 +4,15 @@
 <head>
     <meta charset="UTF-8" />
     <title>Web-NXDT</title>
-    <link rel="icon" type="image/png" href="favicon.ico"/>
+    <link rel="icon" type="image/png" href="favicon.png"/>
     <link href="style.css" rel="stylesheet" />
     <script defer src="script.js"></script>
+    <link rel="manifest" href="manifest.json" />
 </head>
 
 <body>
     <div id="app">
-        <header>Web-NXDT - NXDumpTool</header>
+        <header>Web-NXDT - NXDumpTool USB host</header>
         <main>
             <ul>
                 <li><button id="directory" class="inline">
@@ -27,7 +28,7 @@
                         <span data-platform="Windows" hidden>
                             Windows systems require installing the WinUSB driver for the desired device,
                             which can be obtained by <a target="_blank" href="https://zadig.akeo.ie/">Zadig</a>.
-                            Device might need manual application restart if unable to connect.
+                            Device application might need manual restart if unable to connect.
                         </span>
                         <span data-platform="Linux" hidden>
                             Linux systems require creating <code>/etc/udev/rules.d/70-nxdt.rules</code>,
@@ -48,11 +49,14 @@
                     <small id="notify-info">Send a notification when a transfer is completed or interrupted.</small>
                 </li>
                 <li><button id="debug" class="inline" aria-describedby="debug-info">
-                        <span>Bug report</span>
+                        <span>Generate report</span>
                         <span class="value">Version</span>
                     </button></li>
                 <li>
-                    <small id="debug-info">Generate a detailed event history for bug reports.</small>
+                    <small id="debug-info">
+                        Generate a detailed event history for reports.
+                        Report a <a target="_blank" href="https://github.com/MAProsper/web-nxdt/issues">new issue</a>.
+                    </small>
                 </li>
             </ul>
         </main>
