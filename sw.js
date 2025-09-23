@@ -1,7 +1,7 @@
 const MAGIC = 'NXDT';
 
 async function process(request) {
-    const include = new URL(request.url).host == location.host;
+    const include = new URL(request.url).host == location.host && request.method == 'GET';
     let response;
 
     try {
