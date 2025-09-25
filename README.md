@@ -1,7 +1,7 @@
-# Web-NXDT - NXDumpTool
-Web version of NXDT host tool
+# Web-NXDT - NXDumpTool USB host
+Web version of NXDT USB host tool
 
-Try it out: <https://nxdt.m16r.xyz/>
+Try it out: <https://nxdt.m16r.xyz>
 
 ![Demo](demo.gif)
 
