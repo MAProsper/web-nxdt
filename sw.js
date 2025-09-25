@@ -1,25 +1,17 @@
 const MAGIC = 'NXDT';
 
 async function process(request) {
-    const include = new URL(request.url).host == location.host && request.method == 'GET';
-    let response;
+    const url = new URL(request.url);
 
-    try {
-        response = await fetch(request);
+    let response = await fetch(request).catch(() => Response.error());
 
-        if (include && response.ok) {
-            const cache = await caches.open(MAGIC);
+    if (request.method == 'GET' && url.host == location.host) {
+        const cache = await caches.open(MAGIC);
+
+        if (response.ok) {
             await cache.put(request, response.clone());
-        }
-    } catch (e) {
-        console.warn(e);
-
-        if (include) {
-            response = await caches.match(request);
-        }
-
-        if (!response) {
-            response = Response.error();
+        } else {
+            response = await cache.match(request) || response;
         }
     }
 

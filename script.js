@@ -232,7 +232,7 @@ const NXDT = {
     VERSION: {
         MAJOR: 1,
         MINOR: 4,
-        MICRO: 4
+        MICRO: 5
     }
 }
 
