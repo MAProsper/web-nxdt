@@ -232,7 +232,7 @@ const NXDT = {
     VERSION: {
         MAJOR: 1,
         MINOR: 4,
-        MICRO: 5
+        MICRO: 6
     }
 }
 
@@ -916,6 +916,7 @@ async function openDevice(usbDev) {
         currentDevice = new NxdtUsb(usbDev);
     } catch (e) {
         notify('Device incompatible');
+        logger.trace(e);
         await usbDev.forget();
         throw e;
     }
@@ -924,6 +925,7 @@ async function openDevice(usbDev) {
         await currentDevice.open();
     } catch (e) {
         notify('Device unresponsive');
+        logger.trace(e);
         await closeDevice();
         throw e;
     }
@@ -935,6 +937,7 @@ async function openDevice(usbDev) {
         [cmdId, cmdData] = await currentSession.getCmd();
     } catch (e) {
         notify('Application unresponsive');
+        logger.trace(e);
         await closeDevice();
         throw e;
     }
@@ -943,6 +946,7 @@ async function openDevice(usbDev) {
         await currentSession.handleStartSessionCmd(cmdId, cmdData);
     } catch (e) {
         notify('Application incompatible');
+        logger.trace(e);
         await closeDevice();
         throw e;
     }
@@ -956,7 +960,6 @@ async function handleSession() {
         await currentSession.handleSessionTransfer();
     } catch (e) {
         notify('Application error', true);
-        globalThis.error = e;
         logger.trace(e);
         throw e;
     } finally {
