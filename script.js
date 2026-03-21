@@ -1106,8 +1106,8 @@ async function requestDevice() {
 
 function toggleVerify() {
     verifyButton.enabled = !verifyButton.enabled;
-    setValueText(verifyButton, verifyButton.enabled ? 'Enabled' : 'Disabled');
     logger.info(`Setting: verify=${verifyButton.enabled}`);
+    setValueText(verifyButton, verifyButton.enabled ? 'Enabled' : 'Disabled');
 }
 
 function generateDebug() {
