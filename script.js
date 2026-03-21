@@ -411,7 +411,7 @@ const CONFIG = {
     VERSION: {
         MAJOR: 2,
         MINOR: 0,
-        MICRO: 0
+        MICRO: 1
     }
 }
 
@@ -634,6 +634,7 @@ class Dialog {
     }
 
     close() {
+        if (!this.dialog.matches(':open')) return;
         logger.info(`Dialog: close`);
         this.dialog.close();
     }
