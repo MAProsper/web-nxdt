@@ -47,8 +47,7 @@ body {
 }
 
 /* Generic elements */
-body,
-dialog {
+body, dialog {
     margin: auto;
     max-width: 50rem;
     background-color: var(--background-color);
@@ -87,7 +86,7 @@ dialog:focus {
     outline: none;
 }
 
-.progress-spinner {
+.spinner {
     display: inline-block;
     font-size: 0.2em;
     width: 1em;
@@ -96,7 +95,6 @@ dialog:focus {
     border-radius: 50%;
     animation: spinner 1s infinite ease;
 }
-
 
 progress {
     flex-grow: 1;
@@ -136,12 +134,12 @@ main li {
     border-width: 1px;
 }
 
-main li>* {
+main li > * {
     padding: 1rem;
     width: 100%;
 }
 
-main li>small {
+main li > small {
     padding-top: 0.5rem;
 }
 
@@ -162,7 +160,8 @@ footer {
     padding: 1rem;
     color: white;
     border: none;
-    background-color: rgba(20, 20, 20, 0.75)
+    background-color: rgba(20, 20, 20, 0.75);
+    box-shadow: 0em 0em 1em 0em rgba(128, 128, 128, 0.1);
 }
 
 dialog {
@@ -177,11 +176,11 @@ dialog {
     color: inherit;
 }
 
-dialog>*:first-child {
+dialog > *:first-child {
     margin-top: var(--dialog-margin);
 }
 
-dialog>*:last-child {
+dialog > *:last-child {
     margin-bottom: var(--dialog-margin);
 }
 
@@ -189,7 +188,7 @@ dialog::backdrop {
     background-color: rgba(10, 21, 34, 0.75);
 }
 
-#transfer-progress {
+#progress-label {
     white-space: nowrap;
 }
 
