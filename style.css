@@ -155,6 +155,10 @@ footer {
     gap: 2rem;
 }
 
+#notify {
+    margin-right: auto;
+}
+
 [popover] {
     margin: 0;
     padding: 1rem;

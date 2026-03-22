@@ -437,13 +437,13 @@ function setValueText(e, value) {
     e.querySelector('.value').innerText = value;
 }
 
-function notify(message) {
+function notify(message, important = false) {
     logger.info(`Notification: ${message}`);
-    new Notification(document.title, { body: message });
+    if (important) new Notification(document.title, { body: message });
 
     // Setup toast
     const dialogs = document.querySelectorAll('dialog');
-    const toast = document.getElementById('notify');
+    const toast = document.getElementById('toast');
     toast.innerText = message;
 
     // Ensure toast
@@ -815,7 +815,7 @@ class NxdtClient {
             progressDialog.close();
         }
 
-        notify('Transfer finished');
+        notify('Transfer finished', true);
     }
 
     async parseFileHeader(cmdId, cmdData) {
@@ -867,7 +867,7 @@ class NxdtClient {
         const digest = hasher.hexdigest();
         const verified = digest.includes(hash);
         logger.debug(`Checksum: ${digest}, verified=${verified}`);
-        if (!verified) notify('Transfer tainted');
+        if (!verified) notify('Transfer tainted', true);
         return verified;
     }
 
@@ -920,7 +920,7 @@ class NxdtClient {
             progressDialog.close();
         }
 
-        notify('Transfer finished');
+        notify('Transfer finished', true);
     }
 
     async parseFsCmdHeader(cmdId, cmdData) {
@@ -992,7 +992,7 @@ class NxdtClient {
             progressDialog.close();
         }
 
-        notify('Transfer finished');
+        notify('Transfer finished', true);
     }
 
     async parseBulkCmdHeader(cmdId, cmdData) {
@@ -1176,6 +1176,19 @@ function generateDebug() {
     }
 }
 
+async function requestNotify() {
+    spinnerDialog.open('Requesting…', 'Notification permission');
+    try {
+        await Notification.requestPermission();
+    } finally {
+        spinnerDialog.close();
+    }
+
+    if (!syncNotify()) {
+        notify('Notifications denied');
+    }
+}
+
 async function closeDevice() {
     setValueText(deviceButton, 'Not connected');
     await deviceButton.device.close();
@@ -1242,7 +1255,7 @@ async function handleSession() {
     try {
         await globalThis.appClient.handleSessionTransfer();
     } catch (e) {
-        notify('Communication error');
+        notify('Communication error', true);
         logger.trace(e);
         throw e;
     } finally {
@@ -1296,6 +1309,12 @@ function deviceSupport() {
     platformInfo.hidden = false;
 }
 
+function syncNotify() {
+    const allowed = Notification.permission == 'granted';
+    notifyButton.style.display = allowed ? 'none' : 'initial';
+    return allowed;
+}
+
 async function syncWorker() {
     await navigator.serviceWorker.register('sw.js');
 }
@@ -1309,6 +1328,7 @@ const directoryButton = document.getElementById('directory');
 const deviceButton = document.getElementById('device');
 const verifyButton = document.getElementById('verify');
 const debugButton = document.getElementById('debug');
+const notifyButton = document.getElementById('notify');
 
 platformInfo();
 browserSupport();
@@ -1318,5 +1338,7 @@ directoryButton.addEventListener('click', requestDirectory);
 deviceButton.addEventListener('click', requestDevice);
 verifyButton.addEventListener('click', toggleVerify);
 debugButton.addEventListener('click', generateDebug);
+notifyButton.addEventListener('click', requestNotify);
 
 syncWorker();
+syncNotify();
