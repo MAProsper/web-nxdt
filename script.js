@@ -668,11 +668,11 @@ class ProgressDialog extends Dialog {
     }
 
     #formatTime(sec) {
-        if (sec < 60) return `${Math.ceil(sec)} sec`;
+        if (sec < 60) return `${Math.ceil(sec)} seconds`;
         const min = sec / 60;
-        if (min < 60) return `${Math.ceil(min)} min`;
+        if (min < 60) return `${Math.ceil(min)} minutes`;
         const h = min / 60;
-        return `${Math.ceil(h)} h`;
+        return `${Math.ceil(h)} hours`;
     }
 
     update(increment) {
@@ -680,9 +680,9 @@ class ProgressDialog extends Dialog {
         const prec = this.progress.position;
         const elapsedTime = Date.now() - this.startTime;
         const remainingTime = (elapsedTime / prec) * (1 - prec);
-        const displayTime = (elapsedTime < CONFIG.TIME.TRANSFER_ESTIMATE || !Number.isFinite(remainingTime)) ? 'estimating…' : this.#formatTime(remainingTime / 1000);
+        const displayTime = elapsedTime > CONFIG.TIME.TRANSFER_ESTIMATE && Number.isFinite(remainingTime);
         this.label.innerText = `${Math.floor(this.progress.position * 100)} %`;
-        this.status.innerText = `Time remaining: ${displayTime}`;
+        this.status.innerText = displayTime ? `${this.#formatTime(remainingTime / 1000)} remaining` : '\xa0';
     }
 }
 
@@ -748,7 +748,7 @@ class NxdtClient {
 
     getChecksum(path) {
         if (!this.options.verify) return;
-        return /(?<=^|\/)(?<hash>[0-9a-f]{32})(\.[^\/]+)*\.nca$/.exec(path)?.groups?.hash;
+        return /(?<=^|\/)(?<hash>[0-9a-f]{32})(\.[^\/]+)*\.\x6e\x63\x61$/.exec(path)?.groups?.hash;
     }
 
     /* PROTOCOL */
@@ -762,10 +762,10 @@ class NxdtClient {
         logger.debug(`Send: status`)
     }
 
-    async getCmdHeader() {
+    async getCmdHeader(timeout = CONFIG.TIME.TRANSFER_TIMEOUT) {
         logger.debug('Receiving: command header');
 
-        const cmdHeader = await this.device.read(CONFIG.STRUCT.COMMAND_HEADER.size);
+        const cmdHeader = await this.device.read(CONFIG.STRUCT.COMMAND_HEADER.size, timeout);
         assert(cmdHeader.length == CONFIG.STRUCT.COMMAND_HEADER.size, `Failed to read command header! (got=${cmdHeader.length} expect=${CONFIG.STRUCT.COMMAND_HEADER.size})`);
 
         logger.debug('Received: command header');
@@ -785,20 +785,20 @@ class NxdtClient {
         return [cmdId, cmdDataSize];
     }
 
-    async getCmdBlock(cmdDataSize) {
+    async getCmdBlock(cmdDataSize, timeout = CONFIG.TIME.TRANSFER_TIMEOUT) {
         logger.debug('Receiving: command block');
 
-        const cmdData = cmdDataSize ? await this.device.read(cmdDataSize, CONFIG.TIME.TRANSFER_TIMEOUT) : new Uint8Array();
+        const cmdData = cmdDataSize ? await this.device.read(cmdDataSize, timeout) : new Uint8Array();
         assert(cmdData.length == cmdDataSize, `Failed to read ${cmdDataSize}-byte long command block!`);
 
         logger.debug('Received: command block');
         return cmdData;
     }
 
-    async getCmd(cmdHeader) {
-        if (!cmdHeader) cmdHeader = await this.getCmdHeader();
+    async getCmd(cmdHeader = undefined, timeout = CONFIG.TIME.TRANSFER_TIMEOUT) {
+        if (!cmdHeader) cmdHeader = await this.getCmdHeader(timeout);
         const [cmdId, cmdDataLength] = await this.parseCmdHeader(cmdHeader);
-        const cmdData = await this.getCmdBlock(cmdDataLength);
+        const cmdData = await this.getCmdBlock(cmdDataLength, timeout);
         return [cmdId, cmdData];
     }
 
@@ -843,7 +843,8 @@ class NxdtClient {
     }
 
     async handleFileTransfer(file, size, hash = undefined) {
-        logger.debug('Handeling: file transfer');
+        logger.debug(`Handeling: file transfer`);
+        if (hash) logger.debug(`Checksum: ${hash}`);
         const hasher = new Sha256();
 
         for (let offset = 0; offset < size;) {
@@ -992,11 +993,9 @@ class NxdtClient {
         const [bulkCount] = await this.parseBulkCmdHeader(cmdId, cmdData);
         await this.sendStatus(CONFIG.STATUS.SUCCESS);
 
-        let txrCount = 0;
         const dir = this.options.directory;
-
         try {
-            txrCount = await this.handleBulkTransfer(dir, bulkCount);
+            await this.handleBulkTransfer(dir, bulkCount);
         } finally {
             progressDialog.close();
         }
@@ -1056,7 +1055,7 @@ class NxdtClient {
     async handleSessionTransfer() {
         logger.debug('Handeling: session transfer command');
         while (true) {
-            const [cmdId, cmdData] = await this.getCmd();
+            const [cmdId, cmdData] = await this.getCmd(undefined, -1);
 
             try {
                 switch (cmdId) {
