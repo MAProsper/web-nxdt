@@ -650,12 +650,21 @@ class ProgressDialog extends Dialog {
         this.status = this.dialog.querySelector('& > :last-child');
     }
 
-    open(title, text, max) {
+    open(title, text, max, note = '') {
         this.startTime = Date.now();
         this.progress.value = 0;
         this.progress.max = max;
+        this.label.dataset.after = note;
         this.update(0)
         super.open(title, text);
+        clearInterval(this.autoUpdate);
+        this.autoUpdate = setInterval(() => this.update(0), CONFIG.TIME.TRANSFER_ESTIMATE);
+    }
+
+    close() {
+        clearInterval(this.autoUpdate);
+        delete this.autoUpdate;
+        super.close();
     }
 
     #formatTime(sec) {
@@ -671,7 +680,7 @@ class ProgressDialog extends Dialog {
         const prec = this.progress.position;
         const elapsedTime = Date.now() - this.startTime;
         const remainingTime = (elapsedTime / prec) * (1 - prec);
-        const displayTime = (elapsedTime < CONFIG.TIME.TRANSFER_ESTIMATE) ? 'estimating…' : this.#formatTime(remainingTime / 1000);
+        const displayTime = (elapsedTime < CONFIG.TIME.TRANSFER_ESTIMATE || !Number.isFinite(remainingTime)) ? 'estimating…' : this.#formatTime(remainingTime / 1000);
         this.label.innerText = `${Math.floor(this.progress.position * 100)} %`;
         this.status.innerText = `Time remaining: ${displayTime}`;
     }
@@ -1020,7 +1029,7 @@ class NxdtClient {
             const file = await this.makeFile(dir, filePath);
             await this.sendStatus(CONFIG.STATUS.SUCCESS);
 
-            progressDialog.open('Transferring…', `${filePath}\n${i+1}/${bulkCount}`, fileSize);
+            progressDialog.open('Transferring…', filePath, fileSize, `${i+1}/${bulkCount}`);
             await this.handleArchiveTransfer(file, headerSize, fileSize - headerSize);
             this.queueFlush(file.close());
             await this.sendStatus(CONFIG.STATUS.SUCCESS);
@@ -1310,8 +1319,9 @@ function deviceSupport() {
 }
 
 function syncNotify() {
+    const asked = Notification.permission != 'default';
     const allowed = Notification.permission == 'granted';
-    notifyButton.style.display = allowed ? 'none' : 'initial';
+    notifyButton.style.display = asked ? 'none' : 'initial';
     return allowed;
 }
 

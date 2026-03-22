@@ -194,6 +194,18 @@ dialog::backdrop {
 
 #progress-label {
     white-space: nowrap;
+    position: relative;
+    text-align: left;
+    width: 5ch;
+}
+
+#progress-label::after {
+    content: attr(data-after);
+    position: absolute;
+    direction: rtl;
+    bottom: -1em;
+    left: -1em;
+    width: 0;
 }
 
 /* Animations */
