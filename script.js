@@ -818,9 +818,9 @@ class NxdtClient {
             } else {
                 await this.handleFileTransfer(file, fileSize);
             }
+            this.queueFlush(file.close());
             await this.sendStatus(CONFIG.STATUS.SUCCESS);
         } finally {
-            this.queueFlush(file.close());
             progressDialog.close();
         }
 
