@@ -379,7 +379,7 @@ const CONFIG = {
     },
     ABI: {
         MAJOR: 1,
-        MINOR: 2,
+        MINOR: 3,
         TEXT: 'utf8'
     },
     COMMAND: {
@@ -390,6 +390,7 @@ const CONFIG = {
         END_SESSION: 4,
         START_FS_TRANSFER: 5,
         END_FS_TRANSFER: 6,
+        START_BULK_TRANSFER: 7
     },
     SIZE: {
         FILE_BLOCK_TRANSFER: 0x800000,
@@ -410,8 +411,8 @@ const CONFIG = {
     },
     VERSION: {
         MAJOR: 2,
-        MINOR: 0,
-        MICRO: 1
+        MINOR: 1,
+        MICRO: 0
     }
 }
 
@@ -422,7 +423,8 @@ CONFIG.STRUCT = {
     STATUS_RESPONSE: new Struct('<4sIH6x'),
     SESSION_HEADER: new Struct('<BBBB8s4x'),
     FILE_HEADER: new Struct(`<QII${CONFIG.SIZE.FILE_PATH_LENGTH}s15x`),
-    FS_HEADER: new Struct(`<Q${CONFIG.SIZE.FILE_PATH_LENGTH}s7x`)
+    FS_HEADER: new Struct(`<Q${CONFIG.SIZE.FILE_PATH_LENGTH}s7x`),
+    BULK_HEADER: new Struct('<I12x')
 }
 
 function assert(value, message) {
@@ -478,25 +480,10 @@ async function makeFile(dir, filePath) {
     const dirs = filePath.split('/').filter(name => name);
     const name = dirs.pop();
 
-    // Create full directory tree.
-    let dirname;
-    for (dirname of dirs) {
-        try {
-            dir = await dir.getDirectoryHandle(dirname, { create: true });
-        } catch (e) {
-            assert(false, `Failed to create directory component! ('${dirname}').`);
-        }
-    }
-
-    // Create file object.
-    let file;
-    try {
-        file = await dir.getFileHandle(name, { create: true })
-    } catch (e) {
-        assert(false, `Failed to create file component! ('${name}').`);
-    }
-
-    return await file.createWritable({ mode: 'exclusive' });
+    // Create full directory tree and file
+    for (let dirname of dirs) dir = await dir.getDirectoryHandle(dirname, { create: true });
+    const file = await dir.getFileHandle(name, { create: true });
+    return await file.createWritable({ mode: 'siloed' });
 }
 
 class UsbBulk {
@@ -563,17 +550,18 @@ class UsbBulk {
     }
 
     async readChunk(size, timeout = -1) {
-        // assert(size > 0, 'USB.read (invalid size)');
+        assert(size > 0, 'USB.read (invalid size)');
         let promise = this.device.transferIn(this.endpoint.in, size);
         if (timeout >= 0) promise = promiseTimeout(promise, timeout);
         let transfer;
         try {
             transfer = await promise;
-            assert(transfer.status == 'ok', 'USB.read (error)');
         } catch (e) {
+            if (!(e instanceof TimeoutError)) throw e;
             await this.device.reset();
             transfer = {status: 'ok', data: new DataView(new ArrayBuffer(0))};
         }
+        assert(transfer.status == 'ok', 'USB.read (error)');
         const chunk = new Uint8Array(transfer.data.buffer);
         this.readActive = this.isTransferActive(chunk.length, size);
         return chunk;
@@ -592,16 +580,18 @@ class UsbBulk {
     }
 
     async writeChunk(chunk, timeout = -1) {
+        assert(chunk.length > 0, 'USB.write (invalid size)');
         let promise = this.device.transferOut(this.endpoint.out, chunk);
         if (timeout >= 0) promise = promiseTimeout(promise, timeout);
         let transfer;
         try {
             transfer = await promise;
-            assert(transfer.status == 'ok', 'USB.write (error)');
         } catch (e) {
+            if (!(e instanceof TimeoutError)) throw e;
             await this.device.reset();
             transfer = {status: 'ok', bytesWritten: 0};
         }
+        assert(transfer.status == 'ok', 'USB.write (error)');
         this.writeActive = this.isTransferActive(transfer.bytesWritten, chunk.length);
         return transfer.bytesWritten;
     }
@@ -712,7 +702,8 @@ class NxdtClient {
         try {
             return await makeFile(dir, filePath);
         } catch (e) {
-            await this.assert(false, CONFIG.STATUS.HOST_IO_ERROR);
+            await this.sendStatus(CONFIG.STATUS.HOST_IO_ERROR);
+            throw e;
         }
     }
 
@@ -894,8 +885,8 @@ class NxdtClient {
                 await this.handleCancelCmd(cmdId, cmdData);
             }
 
-            const [filePath, fileSize, fileHeader] = await this.parseFileHeader(cmdId, cmdData);
-            await this.assert(!fileHeader, CONFIG.STATUS.MALFORMED_CMD);
+            const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
+            await this.assert(!headerSize, CONFIG.STATUS.MALFORMED_CMD);
             await this.sendStatus(CONFIG.STATUS.SUCCESS);
 
             await this.handleFileTransfer(file, fileSize, this.getChecksum(filePath));
@@ -957,8 +948,8 @@ class NxdtClient {
                 await this.handleCancelCmd(cmdId, cmdData);
             }
 
-            const [filePath, fileSize, fileHeader] = await this.parseFileHeader(cmdId, cmdData);
-            await this.assert(!fileHeader, CONFIG.STATUS.MALFORMED_CMD);
+            const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
+            await this.assert(!headerSize, CONFIG.STATUS.MALFORMED_CMD);
             const file = await this.makeFile(dir, filePath);
             try {
                 await this.sendStatus(CONFIG.STATUS.SUCCESS);
@@ -985,6 +976,55 @@ class NxdtClient {
     async handleEndFsCmd(cmdId, cmdData) {
         await this.assert(cmdId == CONFIG.COMMAND.END_FS_TRANSFER && cmdData.length == 0, CONFIG.STATUS.MALFORMED_CMD);
         await this.sendStatus(CONFIG.STATUS.SUCCESS);
+    }
+
+    async handleBulkCmd(cmdId, cmdData) {
+        logger.info('Requested: bulk transfer command');
+        const [bulkCount] = await this.parseBulkCmdHeader(cmdId, cmdData);
+        await this.sendStatus(CONFIG.STATUS.SUCCESS);
+
+        let txrCount = 0;
+        const dir = this.options.directory;
+
+        try {
+            txrCount = await this.handleBulkTransfer(dir, bulkCount);
+        } finally {
+            progressDialog.close();
+        }
+
+        notify('Transfer finished');
+    }
+
+    async parseBulkCmdHeader(cmdId, cmdData) {
+        logger.debug('Parsing: bulk header');
+        await this.assert(cmdId == CONFIG.COMMAND.START_BULK_TRANSFER && cmdData.length == CONFIG.STRUCT.BULK_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
+
+        const [bulkCount] = CONFIG.STRUCT.BULK_HEADER.unpack(cmdData);
+        logger.info(`Parsed: bulk header (bulkCount=${bulkCount})`);
+
+        return [bulkCount];
+    }
+
+    async handleBulkTransfer(dir, bulkCount) {
+        logger.debug('Handeling: bulk transfer');
+
+        for (let i = 0; i < bulkCount; i++) {
+            const [cmdId, cmdData] = await this.getCmd();
+
+            if (cmdId == CONFIG.COMMAND.CANCEL_TRANSFER) {
+                await this.handleCancelCmd(cmdId, cmdData);
+            }
+
+            const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
+            await this.assert(headerSize, CONFIG.STATUS.MALFORMED_CMD);
+            const file = await this.makeFile(dir, filePath);
+            await this.sendStatus(CONFIG.STATUS.SUCCESS);
+
+            progressDialog.open('Transferring…', `${filePath}\n${i+1}/${bulkCount}`, fileSize);
+            await this.handleArchiveTransfer(file, headerSize, fileSize - headerSize);
+            this.queueFlush(file.close());
+            await this.sendStatus(CONFIG.STATUS.SUCCESS);
+        }
     }
 
     /* SESSION */
@@ -1017,6 +1057,9 @@ class NxdtClient {
                     case CONFIG.COMMAND.START_FS_TRANSFER:
                         await this.handleFsCmd(cmdId, cmdData);
                         break;
+                    case CONFIG.COMMAND.START_BULK_TRANSFER:
+                        await this.handleBulkCmd(cmdId, cmdData);
+                        break;
                     case CONFIG.COMMAND.END_SESSION:
                         await this.handleEndSessionCmd(cmdId, cmdData);
                         return;
@@ -1024,11 +1067,7 @@ class NxdtClient {
                         await this.sendStatus(CONFIG.STATUS.MALFORMED_CMD);
                 }
             } catch (e) {
-                if (e instanceof NxdtCancelError) {
-                    continue;
-                }
-
-                throw e;
+                if (!(e instanceof NxdtCancelError)) throw e;
             }
         }
     }
@@ -1058,6 +1097,7 @@ async function requestDirectory() {
     try {
         directoryButton.directory = await window.showDirectoryPicker({ id: bytesDecode(CONFIG.ABI.MAGIC, CONFIG.ABI.TEXT), mode: 'readwrite', startIn: 'downloads' });
     } catch (e) {
+        logger.warn(e);
         return;
     } finally {
         spinnerDialog.close();
@@ -1080,6 +1120,7 @@ async function requestDirectory() {
         try {
             await openDevice(device);
         } catch (e) {
+            logger.warn(e);
             continue;
         }
 
@@ -1096,6 +1137,7 @@ async function requestDevice() {
     try {
         device = await navigator.usb.requestDevice({ filters: [{ vendorId: CONFIG.DEVICE.vendorId, productId: CONFIG.DEVICE.productId }] });
     } catch (e) {
+        logger.warn(e);
         return;
     } finally {
         spinnerDialog.close();
@@ -1153,7 +1195,7 @@ async function openDevice(usbDev) {
         deviceButton.device = new UsbBulk(usbDev);
     } catch (e) {
         notify('Device incompatible');
-        logger.trace(e);
+        logger.warn(e);
         await usbDev.forget();
         throw e;
     }
@@ -1162,7 +1204,7 @@ async function openDevice(usbDev) {
         await deviceButton.device.open();
     } catch (e) {
         notify('Device unresponsive');
-        logger.trace(e);
+        logger.warn(e);
         await closeDevice();
         throw e;
     }
@@ -1178,7 +1220,7 @@ async function openDevice(usbDev) {
         [cmdId, cmdData] = await globalThis.appClient.getCmd();
     } catch (e) {
         notify('Application unresponsive');
-        logger.trace(e);
+        logger.warn(e);
         await closeDevice();
         throw e;
     }
@@ -1187,7 +1229,7 @@ async function openDevice(usbDev) {
         await globalThis.appClient.handleStartSessionCmd(cmdId, cmdData);
     } catch (e) {
         notify('Application incompatible');
-        logger.trace(e);
+        logger.warn(e);
         await closeDevice();
         throw e;
     }
@@ -1200,7 +1242,7 @@ async function handleSession() {
     try {
         await globalThis.appClient.handleSessionTransfer();
     } catch (e) {
-        notify('Application error');
+        notify('Communication error');
         logger.trace(e);
         throw e;
     } finally {
