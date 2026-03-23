@@ -806,6 +806,7 @@ class NxdtClient {
     async handleFileCmd(cmdId, cmdData) {
         logger.info('Requested: file transfer command');
         const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
+        let success = true;
 
         const dir = this.options.directory;
         const file = await this.makeFile(dir, filePath);
@@ -814,9 +815,9 @@ class NxdtClient {
 
             progressDialog.open('Transferring…', filePath, fileSize);
             if (headerSize) {
-                await this.handleArchiveTransfer(file, headerSize, fileSize - headerSize);
+                success &&= await this.handleArchiveTransfer(file, headerSize, fileSize - headerSize);
             } else {
-                await this.handleFileTransfer(file, fileSize);
+                success &&= await this.handleFileTransfer(file, fileSize);
             }
             this.queueFlush(file.close());
             await this.sendStatus(CONFIG.STATUS.SUCCESS);
@@ -824,7 +825,8 @@ class NxdtClient {
             progressDialog.close();
         }
 
-        notify('Transfer finished', true);
+        notify(success ? 'Transfer successful' : 'Transfer failed', true);
+        return success;
     }
 
     async parseFileHeader(cmdId, cmdData) {
@@ -846,13 +848,15 @@ class NxdtClient {
         logger.debug(`Handeling: file transfer`);
         if (hash) logger.debug(`Checksum: ${hash}`);
         const hasher = new Sha256();
+        let success = true;
 
-        for (let offset = 0; offset < size;) {
+        let offset = 0;
+        while (offset < size) {
             const chunkSize = Math.min(CONFIG.SIZE.FILE_BLOCK_TRANSFER, size - offset);
             const chunk = await this.device.readChunk(chunkSize, CONFIG.TIME.TRANSFER_TIMEOUT);
 
             if (chunk.length == 0) {
-                await this.handleCancelCmd(CONFIG.COMMAND.CANCEL_TRANSFER, new Uint8Array());
+                await this.handleCancelCmd(CONFIG.COMMAND.CANCEL_TRANSFER, chunk);
             }
 
             // Check if we're dealing with a command
@@ -871,66 +875,70 @@ class NxdtClient {
             offset += chunk.length;
         }
         await this.device.readEnd(CONFIG.TIME.TRANSFER_TIMEOUT);
+        success &&= offset == size;
 
         // Handle checksum
-        if (!hash) return;
+        if (!hash) return success;
         const digest = hasher.hexdigest();
         const verified = digest.includes(hash);
         logger.debug(`Checksum: ${digest}, verified=${verified}`);
-        if (!verified) notify('Transfer tainted', true);
-        return verified;
+        success &&= verified;
+        return success;
     }
 
     async handleArchiveTransfer(file, headerSize, dataSize) {
         logger.debug('Handeling: archive transfer');
+        let cmdId, cmdData;
+        let success = true;
 
         // Skip header
         await file.seek(headerSize);
 
         // File entrys
-        for (let offset = 0; offset < dataSize;) {
-            const [cmdId, cmdData] = await this.getCmd();
+        while (true) {
+            [cmdId, cmdData] = await this.getCmd();
 
             if (cmdId == CONFIG.COMMAND.CANCEL_TRANSFER) {
                 await this.handleCancelCmd(cmdId, cmdData);
+            }
+
+            if (cmdId == CONFIG.COMMAND.HEADER_TRANSFER) {
+                break;
             }
 
             const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
             await this.assert(!headerSize, CONFIG.STATUS.MALFORMED_CMD);
             await this.sendStatus(CONFIG.STATUS.SUCCESS);
 
-            await this.handleFileTransfer(file, fileSize, this.getChecksum(filePath));
+            success &&= await this.handleFileTransfer(file, fileSize, this.getChecksum(filePath));
             await this.sendStatus(CONFIG.STATUS.SUCCESS);
-            offset += fileSize;
         }
 
         // File header
-        const [cmdId, cmdData] = await this.getCmd();
-
-        if (cmdId == CONFIG.COMMAND.CANCEL_TRANSFER) {
-            await this.handleCancelCmd(cmdId, cmdData);
-        }
-
         await this.assert(cmdId == CONFIG.COMMAND.HEADER_TRANSFER && cmdData.length == headerSize, CONFIG.STATUS.MALFORMED_CMD);
 
         await file.seek(0);
         await file.write(cmdData);
         progressDialog.update(cmdData.length);
+
+        return success;
     }
 
     async handleFsCmd(cmdId, cmdData) {
         logger.info('Requested: fs transfer command');
         const [fsSize, fsPath] = await this.parseFsCmdHeader(cmdId, cmdData);
         await this.sendStatus(CONFIG.STATUS.SUCCESS);
+        let success = true;
 
         progressDialog.open('Transferring…', fsPath, fsSize);
         try {
-            await this.handleFsTransfer(fsSize);
+            success &&= await this.handleFsTransfer(fsSize);
         } finally {
             progressDialog.close();
         }
 
-        notify('Transfer finished', true);
+        notify(success ? 'Transfer successful' : 'Transfer failed', true);
+        return success;
     }
 
     async parseFsCmdHeader(cmdId, cmdData) {
@@ -948,14 +956,19 @@ class NxdtClient {
     async handleFsTransfer(fsSize) {
         logger.debug('Handeling: fs transfer');
         const dir = this.options.directory;
+        let cmdId, cmdData;
+        let success = true;
 
         // Transfer FS
-        let offset = 0;
-        while (offset < fsSize) {
-            const [cmdId, cmdData] = await this.getCmd();
+        while (true) {
+            [cmdId, cmdData] = await this.getCmd();
 
             if (cmdId == CONFIG.COMMAND.CANCEL_TRANSFER) {
                 await this.handleCancelCmd(cmdId, cmdData);
+            }
+
+            if (cmdId == CONFIG.COMMAND.END_TRANSFER) {
+                break;
             }
 
             const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
@@ -964,23 +977,16 @@ class NxdtClient {
             try {
                 await this.sendStatus(CONFIG.STATUS.SUCCESS);
 
-                await this.handleFileTransfer(file, fileSize);
+                success &&= await this.handleFileTransfer(file, fileSize);
                 await this.sendStatus(CONFIG.STATUS.SUCCESS);
             } finally {
                 this.queueFlush(file.close());
             }
-
-            offset += fileSize;
-        }
-
-        // End Transfer
-        const [cmdId, cmdData] = await this.getCmd();
-
-        if (cmdId == CONFIG.COMMAND.CANCEL_TRANSFER) {
-            await this.handleCancelCmd(cmdId, cmdData);
         }
 
         await this.handleEndTransferCmd(cmdId, cmdData);
+
+        return success;
     }
 
     async handleEndTransferCmd(cmdId, cmdData) {
@@ -992,24 +998,16 @@ class NxdtClient {
         logger.info('Requested: bulk transfer command');
         const [bulkCount] = await this.parseBulkCmdHeader(cmdId, cmdData);
         await this.sendStatus(CONFIG.STATUS.SUCCESS);
+        let success = true;
 
-        const dir = this.options.directory;
         try {
-            await this.handleBulkTransfer(dir, bulkCount);
+            success &&= await this.handleBulkTransfer(bulkCount);
         } finally {
             progressDialog.close();
         }
 
-        // End Transfer
-        [cmdId, cmdData] = await this.getCmd();
-
-        if (cmdId == CONFIG.COMMAND.CANCEL_TRANSFER) {
-            await this.handleCancelCmd(cmdId, cmdData);
-        }
-
-        await this.handleEndTransferCmd(cmdId, cmdData);
-
-        notify('Transfer finished', true);
+        notify(success ? 'Transfer successful' : 'Transfer failed', true);
+        return success;
     }
 
     async parseBulkCmdHeader(cmdId, cmdData) {
@@ -1022,14 +1020,24 @@ class NxdtClient {
         return [bulkCount];
     }
 
-    async handleBulkTransfer(dir, bulkCount) {
+    async handleBulkTransfer(bulkCount) {
         logger.debug('Handeling: bulk transfer');
+        const dir = this.options.directory;
+        let cmdId, cmdData;
+        let success = true;
 
-        for (let i = 0; i < bulkCount; i++) {
-            const [cmdId, cmdData] = await this.getCmd();
+        // Transfer Bulk
+        let count = 0;
+        while (true) {
+            count++;
+            [cmdId, cmdData] = await this.getCmd();
 
             if (cmdId == CONFIG.COMMAND.CANCEL_TRANSFER) {
                 await this.handleCancelCmd(cmdId, cmdData);
+            }
+
+            if (cmdId == CONFIG.COMMAND.END_TRANSFER) {
+                break;
             }
 
             const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
@@ -1037,11 +1045,15 @@ class NxdtClient {
             const file = await this.makeFile(dir, filePath);
             await this.sendStatus(CONFIG.STATUS.SUCCESS);
 
-            progressDialog.open('Transferring…', filePath, fileSize, `${i+1}/${bulkCount}`);
-            await this.handleArchiveTransfer(file, headerSize, fileSize - headerSize);
+            progressDialog.open('Transferring…', filePath, fileSize, `${count}/${bulkCount}`);
+            success &&= await this.handleArchiveTransfer(file, headerSize, fileSize - headerSize);
             this.queueFlush(file.close());
             await this.sendStatus(CONFIG.STATUS.SUCCESS);
         }
+
+        await this.handleEndTransferCmd(cmdId, cmdData);
+
+        return success;
     }
 
     /* SESSION */
@@ -1060,23 +1072,25 @@ class NxdtClient {
 
     async handleSessionTransfer() {
         logger.debug('Handeling: session transfer command');
-        while (true) {
-            const [cmdId, cmdData] = await this.getCmd(undefined, -1);
+        let cmdId, cmdData;
+        let success = true;
+
+        loop: while (true) {
+            [cmdId, cmdData] = await this.getCmd(undefined, -1);
 
             try {
                 switch (cmdId) {
                     case CONFIG.COMMAND.FILE_TRANSFER:
-                        await this.handleFileCmd(cmdId, cmdData);
+                        success &&= await this.handleFileCmd(cmdId, cmdData);
                         break;
                     case CONFIG.COMMAND.FS_TRANSFER:
-                        await this.handleFsCmd(cmdId, cmdData);
+                        success &&= await this.handleFsCmd(cmdId, cmdData);
                         break;
                     case CONFIG.COMMAND.BULK_TRANSFER:
-                        await this.handleBulkCmd(cmdId, cmdData);
+                        success &&= await this.handleBulkCmd(cmdId, cmdData);
                         break;
                     case CONFIG.COMMAND.END_SESSION:
-                        await this.handleEndSessionCmd(cmdId, cmdData);
-                        return;
+                        break loop;
                     default:
                         await this.sendStatus(CONFIG.STATUS.MALFORMED_CMD);
                 }
@@ -1084,6 +1098,10 @@ class NxdtClient {
                 if (!(e instanceof NxdtCancelError)) throw e;
             }
         }
+
+        success &&= await this.handleEndSessionCmd(cmdId, cmdData);
+
+        return success;
     }
 
     async handleEndSessionCmd(cmdId, cmdData) {
@@ -1092,6 +1110,8 @@ class NxdtClient {
         notify('Disconnecting device');
 
         await this.sendStatus(CONFIG.STATUS.SUCCESS);
+
+        return true;
     }
 
     async handleCancelCmd(cmdId, cmdData) {
@@ -1101,6 +1121,7 @@ class NxdtClient {
         notify('Operation cancelled');
 
         await this.sendStatus(CONFIG.STATUS.SUCCESS);
+
         throw new NxdtCancelError();
     }
 }
