@@ -379,18 +379,18 @@ const CONFIG = {
     },
     ABI: {
         MAJOR: 1,
-        MINOR: 3,
+        MINOR: 4,
         TEXT: 'utf8'
     },
     COMMAND: {
         START_SESSION: 0,
-        FILE_TRANSFER: 1,
-        CANCEL_TRANSFER: 2,
-        FILE_HEADER_TRANSFER: 3,
-        END_SESSION: 4,
-        START_FS_TRANSFER: 5,
-        END_FS_TRANSFER: 6,
-        START_BULK_TRANSFER: 7
+        END_SESSION: 1,
+        FILE_TRANSFER: 2,
+        HEADER_TRANSFER: 3,
+        CANCEL_TRANSFER: 4,
+        FS_TRANSFER: 5,
+        BULK_TRANSFER: 6,
+        END_TRANSFER: 7
     },
     SIZE: {
         FILE_BLOCK_TRANSFER: 0x800000,
@@ -411,7 +411,7 @@ const CONFIG = {
     },
     VERSION: {
         MAJOR: 2,
-        MINOR: 1,
+        MINOR: 2,
         MICRO: 0
     }
 }
@@ -911,7 +911,7 @@ class NxdtClient {
             await this.handleCancelCmd(cmdId, cmdData);
         }
 
-        await this.assert(cmdId == CONFIG.COMMAND.FILE_HEADER_TRANSFER && cmdData.length == headerSize, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId == CONFIG.COMMAND.HEADER_TRANSFER && cmdData.length == headerSize, CONFIG.STATUS.MALFORMED_CMD);
 
         await file.seek(0);
         await file.write(cmdData);
@@ -935,7 +935,7 @@ class NxdtClient {
 
     async parseFsCmdHeader(cmdId, cmdData) {
         logger.debug('Parsing: FS header');
-        await this.assert(cmdId == CONFIG.COMMAND.START_FS_TRANSFER && cmdData.length == CONFIG.STRUCT.FS_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId == CONFIG.COMMAND.FS_TRANSFER && cmdData.length == CONFIG.STRUCT.FS_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
 
         const [fsSize, rawFsPath] = CONFIG.STRUCT.FS_HEADER.unpack(cmdData);
         const fsPath = strStrip(bytesDecode(rawFsPath, CONFIG.ABI.TEXT), '\0');
@@ -973,18 +973,18 @@ class NxdtClient {
             offset += fileSize;
         }
 
-        // End FS
+        // End Transfer
         const [cmdId, cmdData] = await this.getCmd();
 
         if (cmdId == CONFIG.COMMAND.CANCEL_TRANSFER) {
             await this.handleCancelCmd(cmdId, cmdData);
         }
 
-        await this.handleEndFsCmd(cmdId, cmdData);
+        await this.handleEndTransferCmd(cmdId, cmdData);
     }
 
-    async handleEndFsCmd(cmdId, cmdData) {
-        await this.assert(cmdId == CONFIG.COMMAND.END_FS_TRANSFER && cmdData.length == 0, CONFIG.STATUS.MALFORMED_CMD);
+    async handleEndTransferCmd(cmdId, cmdData) {
+        await this.assert(cmdId == CONFIG.COMMAND.END_TRANSFER && cmdData.length == 0, CONFIG.STATUS.MALFORMED_CMD);
         await this.sendStatus(CONFIG.STATUS.SUCCESS);
     }
 
@@ -1000,12 +1000,21 @@ class NxdtClient {
             progressDialog.close();
         }
 
+        // End Transfer
+        [cmdId, cmdData] = await this.getCmd();
+
+        if (cmdId == CONFIG.COMMAND.CANCEL_TRANSFER) {
+            await this.handleCancelCmd(cmdId, cmdData);
+        }
+
+        await this.handleEndTransferCmd(cmdId, cmdData);
+
         notify('Transfer finished', true);
     }
 
     async parseBulkCmdHeader(cmdId, cmdData) {
         logger.debug('Parsing: bulk header');
-        await this.assert(cmdId == CONFIG.COMMAND.START_BULK_TRANSFER && cmdData.length == CONFIG.STRUCT.BULK_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId == CONFIG.COMMAND.BULK_TRANSFER && cmdData.length == CONFIG.STRUCT.BULK_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
 
         const [bulkCount] = CONFIG.STRUCT.BULK_HEADER.unpack(cmdData);
         logger.info(`Parsed: bulk header (bulkCount=${bulkCount})`);
@@ -1045,10 +1054,7 @@ class NxdtClient {
         const versionCommit = strStrip(bytesDecode(rawVersionCommit, CONFIG.ABI.TEXT), '\0');
         logger.debug(`Parsed: client info (version=${versionMajor}.${versionMinor}.${versionMicro}, abi=${abiMajor}.${abiMinor}, commit=${versionCommit})`);
 
-        // Check if the abi versions match the ones used by nxdumptool.
-        // TODO: enable abi minor check whenever we're ready for a release.
-        // abiMinor == NXDT.ABI.MINOR
-        await this.assert(abiMajor == CONFIG.ABI.MAJOR, CONFIG.STATUS.UNSUPPORTED_ABI_VERSION);
+        await this.assert(abiMajor == CONFIG.ABI.MAJOR && abiMinor == CONFIG.ABI.MINOR, CONFIG.STATUS.UNSUPPORTED_ABI_VERSION);
         await this.sendStatus(CONFIG.STATUS.SUCCESS);
     }
 
@@ -1062,10 +1068,10 @@ class NxdtClient {
                     case CONFIG.COMMAND.FILE_TRANSFER:
                         await this.handleFileCmd(cmdId, cmdData);
                         break;
-                    case CONFIG.COMMAND.START_FS_TRANSFER:
+                    case CONFIG.COMMAND.FS_TRANSFER:
                         await this.handleFsCmd(cmdId, cmdData);
                         break;
-                    case CONFIG.COMMAND.START_BULK_TRANSFER:
+                    case CONFIG.COMMAND.BULK_TRANSFER:
                         await this.handleBulkCmd(cmdId, cmdData);
                         break;
                     case CONFIG.COMMAND.END_SESSION:
