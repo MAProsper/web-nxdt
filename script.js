@@ -406,8 +406,9 @@ const CONFIG = {
     },
     TIME: {
         TOAST: 3000,
+        PROGRESS_UPDATE: 300,
+        PROGRESS_ESTIMATE: 3000,
         TRANSFER_TIMEOUT: 10000,
-        TRANSFER_ESTIMATE: 2000,
     },
     VERSION: {
         MAJOR: 2,
@@ -570,7 +571,7 @@ class UsbBulk {
     async readEnd(timeout = -1) {
         if (!this.readActive) return;
         const chunk = await this.readChunk(1, timeout);
-        assert(chunk.length == 0, 'USB.readEnd (recived more than expected)');
+        assert(chunk.length == 0, 'USB.readEnd (received more than expected)');
     }
 
     async read(size, timeout = -1) {
@@ -655,34 +656,48 @@ class ProgressDialog extends Dialog {
         this.progress.value = 0;
         this.progress.max = max;
         this.label.dataset.after = note;
-        this.update(0)
+        this.update(0);
+        this.updateEta();
         super.open(title, text);
-        clearInterval(this.autoUpdate);
-        this.autoUpdate = setInterval(() => this.update(0), CONFIG.TIME.TRANSFER_ESTIMATE);
+        clearInterval(this.etaInterval);
+        this.etaInterval = setInterval(() => this.updateEta(), CONFIG.TIME.PROGRESS_UPDATE);
     }
 
     close() {
-        clearInterval(this.autoUpdate);
-        delete this.autoUpdate;
+        clearInterval(this.etaInterval);
+        delete this.etaInterval;
         super.close();
     }
 
     #formatTime(sec) {
-        if (sec < 60) return `${Math.ceil(sec)} seconds`;
-        const min = sec / 60;
-        if (min < 60) return `${Math.ceil(min)} minutes`;
-        const h = min / 60;
-        return `${Math.ceil(h)} hours`;
+        const ranges = [
+            { singular: 'hour', plural: 'hours', scale: 60*60 },
+            { singular: 'minute', plural: 'minutes', scale: 60 },
+            { singular: 'second', plural: 'seconds', scale: 1 }
+        ];
+        const base = ranges.at(-1);
+
+        for (const range of ranges) {
+            if (sec < range.scale && range != base) continue;
+            const value = Math.ceil(sec / range.scale);
+            const unit = value !== 1 ? range.plural : range.singular;
+            return `${value} ${unit}`;
+        }
+
+        throw new RangeError('No time ranges');
+    }
+
+    updateEta() {
+        const prec = this.progress.position;
+        const elapsedTime = Date.now() - this.startTime;
+        const remainingTime = (elapsedTime / prec) * (1 - prec);
+        const displayTime = elapsedTime > CONFIG.TIME.PROGRESS_ESTIMATE && Number.isFinite(remainingTime);
+        this.status.innerText = displayTime ? `${this.#formatTime(remainingTime / 1000)} remaining` : '\xa0';
     }
 
     update(increment) {
         this.progress.value += increment;
-        const prec = this.progress.position;
-        const elapsedTime = Date.now() - this.startTime;
-        const remainingTime = (elapsedTime / prec) * (1 - prec);
-        const displayTime = elapsedTime > CONFIG.TIME.TRANSFER_ESTIMATE && Number.isFinite(remainingTime);
         this.label.innerText = `${Math.floor(this.progress.position * 100)} %`;
-        this.status.innerText = displayTime ? `${this.#formatTime(remainingTime / 1000)} remaining` : '\xa0';
     }
 }
 
@@ -753,7 +768,7 @@ class NxdtClient {
 
     /* PROTOCOL */
     async sendStatus(code) {
-        logger.debug(`Sening: status (${code})`)
+        logger.debug(`Sending: status (${code})`)
 
         const status = CONFIG.STRUCT.STATUS_RESPONSE.pack(CONFIG.ABI.MAGIC, code, this.device.packetSize);
         const wr = await this.device.write(status, CONFIG.TIME.TRANSFER_TIMEOUT);
@@ -845,7 +860,7 @@ class NxdtClient {
     }
 
     async handleFileTransfer(file, size, hash = undefined) {
-        logger.debug(`Handeling: file transfer`);
+        logger.debug(`Handling: file transfer`);
         if (hash) logger.debug(`Checksum: ${hash}`);
         const hasher = new Sha256();
         let success = true;
@@ -887,14 +902,14 @@ class NxdtClient {
     }
 
     async handleArchiveTransfer(file, headerSize, dataSize) {
-        logger.debug('Handeling: archive transfer');
+        logger.debug('Handling: archive transfer');
         let cmdId, cmdData;
         let success = true;
 
         // Skip header
         await file.seek(headerSize);
 
-        // File entrys
+        // File entries
         while (true) {
             [cmdId, cmdData] = await this.getCmd();
 
@@ -954,7 +969,7 @@ class NxdtClient {
     }
 
     async handleFsTransfer(fsSize) {
-        logger.debug('Handeling: fs transfer');
+        logger.debug('Handling: fs transfer');
         const dir = this.options.directory;
         let cmdId, cmdData;
         let success = true;
@@ -1021,7 +1036,7 @@ class NxdtClient {
     }
 
     async handleBulkTransfer(bulkCount) {
-        logger.debug('Handeling: bulk transfer');
+        logger.debug('Handling: bulk transfer');
         const dir = this.options.directory;
         let cmdId, cmdData;
         let success = true;
@@ -1058,7 +1073,7 @@ class NxdtClient {
 
     /* SESSION */
     async handleStartSessionCmd(cmdId, cmdData) {
-        logger.debug('Handeling: session start command');
+        logger.debug('Handling: session start command');
         await this.assert(cmdId == CONFIG.COMMAND.START_SESSION && cmdData.length == CONFIG.STRUCT.SESSION_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
 
         const [versionMajor, versionMinor, versionMicro, abiVersion, rawVersionCommit] = CONFIG.STRUCT.SESSION_HEADER.unpack(cmdData);
@@ -1071,7 +1086,7 @@ class NxdtClient {
     }
 
     async handleSessionTransfer() {
-        logger.debug('Handeling: session transfer command');
+        logger.debug('Handling: session transfer command');
         let cmdId, cmdData;
         let success = true;
 
@@ -1115,7 +1130,7 @@ class NxdtClient {
     }
 
     async handleCancelCmd(cmdId, cmdData) {
-        logger.debug('Handeling: cancel command');
+        logger.debug('Handling: cancel command');
         await this.assert(cmdId == CONFIG.COMMAND.CANCEL_TRANSFER && cmdData.length == 0, CONFIG.STATUS.MALFORMED_CMD);
 
         notify('Operation cancelled');
