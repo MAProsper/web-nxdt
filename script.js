@@ -869,10 +869,7 @@ class NxdtClient {
         while (offset < size) {
             const chunkSize = Math.min(CONFIG.SIZE.FILE_BLOCK_TRANSFER, size - offset);
             const chunk = await this.device.readChunk(chunkSize, CONFIG.TIME.TRANSFER_TIMEOUT);
-
-            if (chunk.length === 0) {
-                await this.handleCancelCmd(CONFIG.COMMAND.CANCEL_TRANSFER, chunk);
-            }
+            if (chunk.length === 0) await this.handleCancelCmd(CONFIG.COMMAND.CANCEL_TRANSFER, chunk);
 
             // Check if we're dealing with a command
             if (chunk.length === CONFIG.STRUCT.COMMAND_HEADER.size) {
@@ -912,14 +909,8 @@ class NxdtClient {
         // File entries
         while (true) {
             [cmdId, cmdData] = await this.getCmd();
-
-            if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) {
-                await this.handleCancelCmd(cmdId, cmdData);
-            }
-
-            if (cmdId === CONFIG.COMMAND.HEADER_TRANSFER) {
-                break;
-            }
+            if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
+            if (cmdId === CONFIG.COMMAND.HEADER_TRANSFER) break;
 
             const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
             await this.assert(!headerSize, CONFIG.STATUS.MALFORMED_CMD);
@@ -977,14 +968,8 @@ class NxdtClient {
         // Transfer FS
         while (true) {
             [cmdId, cmdData] = await this.getCmd();
-
-            if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) {
-                await this.handleCancelCmd(cmdId, cmdData);
-            }
-
-            if (cmdId === CONFIG.COMMAND.END_TRANSFER) {
-                break;
-            }
+            if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
+            if (cmdId === CONFIG.COMMAND.END_TRANSFER) break;
 
             const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
             await this.assert(!headerSize, CONFIG.STATUS.MALFORMED_CMD);
@@ -1046,14 +1031,8 @@ class NxdtClient {
         while (true) {
             count++;
             [cmdId, cmdData] = await this.getCmd();
-
-            if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) {
-                await this.handleCancelCmd(cmdId, cmdData);
-            }
-
-            if (cmdId === CONFIG.COMMAND.END_TRANSFER) {
-                break;
-            }
+            if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
+            if (cmdId === CONFIG.COMMAND.END_TRANSFER) break;
 
             const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
             await this.assert(headerSize, CONFIG.STATUS.MALFORMED_CMD);
