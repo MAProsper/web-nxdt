@@ -22,8 +22,8 @@ function strStrip(str, chars) {
 }
 
 function aryEquals(ary1, ary2) {
-    if (ary1.length != ary2.length) return false;
-    return ary1.every((e, i) => ary2[i] == e);
+    if (ary1.length !== ary2.length) return false;
+    return ary1.every((e, i) => ary2[i] === e);
 }
 
 // === STRUCT ===
@@ -492,12 +492,12 @@ class UsbBulk {
         logger.debug('Creating: USB device');
         this.device = device;
 
-        assert(this.device.manufacturerId == CONFIG.DEVICE.manufacturerId && this.device.productId == CONFIG.DEVICE.productId, 'Invalid manufacturer/product IDs!')
+        assert(this.device.manufacturerId === CONFIG.DEVICE.manufacturerId && this.device.productId === CONFIG.DEVICE.productId, 'Invalid manufacturer/product IDs!')
 
         // Check if the product and manufacturer strings match the ones used by nxdumptool.
         // TODO: enable product string check whenever we're ready for a release.
-        // this.device.productName == NXDT.DEVICE.productName
-        assert(this.device.manufacturerName == CONFIG.DEVICE.manufacturerName, 'Invalid manufacturer/product strings!');
+        // this.device.productName === NXDT.DEVICE.productName
+        assert(this.device.manufacturerName === CONFIG.DEVICE.manufacturerName, 'Invalid manufacturer/product strings!');
 
         // Get default configuration descriptor.
         const configuration = this.device.configuration;
@@ -506,8 +506,8 @@ class UsbBulk {
         this.interface = configuration.interfaces[0];
 
         // Retrieve endpoints.
-        const endpointIn = this.interface.alternate.endpoints.find(e => e.direction == 'in');
-        const endpointOut = this.interface.alternate.endpoints.find(e => e.direction == 'out');
+        const endpointIn = this.interface.alternate.endpoints.find(e => e.direction === 'in');
+        const endpointOut = this.interface.alternate.endpoints.find(e => e.direction === 'out');
 
         assert(endpointIn && endpointOut, 'No endpoint addresses!');
 
@@ -543,11 +543,11 @@ class UsbBulk {
     }
 
     isAlignedToPacket(size) {
-        return (size & (this.packetSize - 1)) == 0;
+        return (size & (this.packetSize - 1)) === 0;
     }
 
     isTransferActive(got, expect) {
-        return got > 0 && got == expect && this.isAlignedToPacket(got);
+        return got > 0 && got === expect && this.isAlignedToPacket(got);
     }
 
     async readChunk(size, timeout = -1) {
@@ -562,7 +562,7 @@ class UsbBulk {
             await this.device.reset();
             transfer = {status: 'ok', data: new DataView(new ArrayBuffer(0))};
         }
-        assert(transfer.status == 'ok', 'USB.read (error)');
+        assert(transfer.status === 'ok', 'USB.read (error)');
         const chunk = new Uint8Array(transfer.data.buffer);
         this.readActive = this.isTransferActive(chunk.length, size);
         return chunk;
@@ -571,7 +571,7 @@ class UsbBulk {
     async readEnd(timeout = -1) {
         if (!this.readActive) return;
         const chunk = await this.readChunk(1, timeout);
-        assert(chunk.length == 0, 'USB.readEnd (received more than expected)');
+        assert(chunk.length === 0, 'USB.readEnd (received more than expected)');
     }
 
     async read(size, timeout = -1) {
@@ -592,7 +592,7 @@ class UsbBulk {
             await this.device.reset();
             transfer = {status: 'ok', bytesWritten: 0};
         }
-        assert(transfer.status == 'ok', 'USB.write (error)');
+        assert(transfer.status === 'ok', 'USB.write (error)');
         this.writeActive = this.isTransferActive(transfer.bytesWritten, chunk.length);
         return transfer.bytesWritten;
     }
@@ -600,7 +600,7 @@ class UsbBulk {
     async writeEnd(timeout = -1) {
         if (!this.writeActive) return;
         const wr = await this.writeChunk(new Uint8Array(0), timeout);
-        assert(wr == 0, 'USB.writeEnd (wrote more than expected)');
+        assert(wr === 0, 'USB.writeEnd (wrote more than expected)');
     }
 
     async write(chunk, timeout = -1) {
@@ -678,7 +678,7 @@ class ProgressDialog extends Dialog {
         const base = ranges.at(-1);
 
         for (const range of ranges) {
-            if (sec < range.scale && range != base) continue;
+            if (sec < range.scale && range !== base) continue;
             const value = Math.ceil(sec / range.scale);
             const unit = value !== 1 ? range.plural : range.singular;
             return `${value} ${unit}`;
@@ -773,7 +773,7 @@ class NxdtClient {
         const status = CONFIG.STRUCT.STATUS_RESPONSE.pack(CONFIG.ABI.MAGIC, code, this.device.packetSize);
         const wr = await this.device.write(status, CONFIG.TIME.TRANSFER_TIMEOUT);
 
-        assert(wr == status.length, 'Failed to send status code!');
+        assert(wr === status.length, 'Failed to send status code!');
         logger.debug(`Send: status`)
     }
 
@@ -781,7 +781,7 @@ class NxdtClient {
         logger.debug('Receiving: command header');
 
         const cmdHeader = await this.device.read(CONFIG.STRUCT.COMMAND_HEADER.size, timeout);
-        assert(cmdHeader.length == CONFIG.STRUCT.COMMAND_HEADER.size, `Failed to read command header! (got=${cmdHeader.length} expect=${CONFIG.STRUCT.COMMAND_HEADER.size})`);
+        assert(cmdHeader.length === CONFIG.STRUCT.COMMAND_HEADER.size, `Failed to read command header! (got=${cmdHeader.length} expect=${CONFIG.STRUCT.COMMAND_HEADER.size})`);
 
         logger.debug('Received: command header');
         return cmdHeader;
@@ -789,7 +789,7 @@ class NxdtClient {
 
     async parseCmdHeader(cmdHeader) {
         logger.debug('Parsing: command header');
-        assert(cmdHeader && cmdHeader.length == CONFIG.STRUCT.COMMAND_HEADER.size, `Command header is the wrong size! (got=${cmdHeader.length} expect=${CONFIG.STRUCT.COMMAND_HEADER.size})`);
+        assert(cmdHeader && cmdHeader.length === CONFIG.STRUCT.COMMAND_HEADER.size, `Command header is the wrong size! (got=${cmdHeader.length} expect=${CONFIG.STRUCT.COMMAND_HEADER.size})`);
 
         const [magic, cmdId, cmdDataSize, ..._] = CONFIG.STRUCT.COMMAND_HEADER.unpack(cmdHeader);
         logger.debug(`Parsed: command header (magic=${bytesDecode(magic, CONFIG.ABI.TEXT)}, cmdId=${cmdId}, cmdDataSize=${cmdDataSize})`);
@@ -804,7 +804,7 @@ class NxdtClient {
         logger.debug('Receiving: command block');
 
         const cmdData = cmdDataSize ? await this.device.read(cmdDataSize, timeout) : new Uint8Array();
-        assert(cmdData.length == cmdDataSize, `Failed to read ${cmdDataSize}-byte long command block!`);
+        assert(cmdData.length === cmdDataSize, `Failed to read ${cmdDataSize}-byte long command block!`);
 
         logger.debug('Received: command block');
         return cmdData;
@@ -846,7 +846,7 @@ class NxdtClient {
 
     async parseFileHeader(cmdId, cmdData) {
         logger.debug('Parsing: file header');
-        await this.assert(cmdId == CONFIG.COMMAND.FILE_TRANSFER && cmdData.length == CONFIG.STRUCT.FILE_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === CONFIG.COMMAND.FILE_TRANSFER && cmdData.length === CONFIG.STRUCT.FILE_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
 
         const [fileSize, filePathLength, headerSize, rawFilePath] = CONFIG.STRUCT.FILE_HEADER.unpack(cmdData);
         const filePath = strStrip(bytesDecode(rawFilePath, CONFIG.ABI.TEXT), '\0');
@@ -870,12 +870,12 @@ class NxdtClient {
             const chunkSize = Math.min(CONFIG.SIZE.FILE_BLOCK_TRANSFER, size - offset);
             const chunk = await this.device.readChunk(chunkSize, CONFIG.TIME.TRANSFER_TIMEOUT);
 
-            if (chunk.length == 0) {
+            if (chunk.length === 0) {
                 await this.handleCancelCmd(CONFIG.COMMAND.CANCEL_TRANSFER, chunk);
             }
 
             // Check if we're dealing with a command
-            if (chunk.length == CONFIG.STRUCT.COMMAND_HEADER.size) {
+            if (chunk.length === CONFIG.STRUCT.COMMAND_HEADER.size) {
                 const magic = CONFIG.STRUCT.COMMAND_HEADER.tokens[0].unpack(chunk);
                 if (aryEquals(magic, CONFIG.ABI.MAGIC)) {
                     const [cmdId, cmdData] = await this.getCmd(chunk);
@@ -890,7 +890,7 @@ class NxdtClient {
             offset += chunk.length;
         }
         await this.device.readEnd(CONFIG.TIME.TRANSFER_TIMEOUT);
-        success &&= offset == size;
+        success &&= offset === size;
 
         // Handle checksum
         if (!hash) return success;
@@ -913,11 +913,11 @@ class NxdtClient {
         while (true) {
             [cmdId, cmdData] = await this.getCmd();
 
-            if (cmdId == CONFIG.COMMAND.CANCEL_TRANSFER) {
+            if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) {
                 await this.handleCancelCmd(cmdId, cmdData);
             }
 
-            if (cmdId == CONFIG.COMMAND.HEADER_TRANSFER) {
+            if (cmdId === CONFIG.COMMAND.HEADER_TRANSFER) {
                 break;
             }
 
@@ -930,7 +930,7 @@ class NxdtClient {
         }
 
         // File header
-        await this.assert(cmdId == CONFIG.COMMAND.HEADER_TRANSFER && cmdData.length == headerSize, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === CONFIG.COMMAND.HEADER_TRANSFER && cmdData.length === headerSize, CONFIG.STATUS.MALFORMED_CMD);
 
         await file.seek(0);
         await file.write(cmdData);
@@ -958,7 +958,7 @@ class NxdtClient {
 
     async parseFsCmdHeader(cmdId, cmdData) {
         logger.debug('Parsing: FS header');
-        await this.assert(cmdId == CONFIG.COMMAND.FS_TRANSFER && cmdData.length == CONFIG.STRUCT.FS_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === CONFIG.COMMAND.FS_TRANSFER && cmdData.length === CONFIG.STRUCT.FS_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
 
         const [fsSize, rawFsPath] = CONFIG.STRUCT.FS_HEADER.unpack(cmdData);
         const fsPath = strStrip(bytesDecode(rawFsPath, CONFIG.ABI.TEXT), '\0');
@@ -978,11 +978,11 @@ class NxdtClient {
         while (true) {
             [cmdId, cmdData] = await this.getCmd();
 
-            if (cmdId == CONFIG.COMMAND.CANCEL_TRANSFER) {
+            if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) {
                 await this.handleCancelCmd(cmdId, cmdData);
             }
 
-            if (cmdId == CONFIG.COMMAND.END_TRANSFER) {
+            if (cmdId === CONFIG.COMMAND.END_TRANSFER) {
                 break;
             }
 
@@ -1005,7 +1005,7 @@ class NxdtClient {
     }
 
     async handleEndTransferCmd(cmdId, cmdData) {
-        await this.assert(cmdId == CONFIG.COMMAND.END_TRANSFER && cmdData.length == 0, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === CONFIG.COMMAND.END_TRANSFER && cmdData.length === 0, CONFIG.STATUS.MALFORMED_CMD);
         await this.sendStatus(CONFIG.STATUS.SUCCESS);
     }
 
@@ -1027,7 +1027,7 @@ class NxdtClient {
 
     async parseBulkCmdHeader(cmdId, cmdData) {
         logger.debug('Parsing: bulk header');
-        await this.assert(cmdId == CONFIG.COMMAND.BULK_TRANSFER && cmdData.length == CONFIG.STRUCT.BULK_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === CONFIG.COMMAND.BULK_TRANSFER && cmdData.length === CONFIG.STRUCT.BULK_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
 
         const [bulkCount] = CONFIG.STRUCT.BULK_HEADER.unpack(cmdData);
         logger.info(`Parsed: bulk header (bulkCount=${bulkCount})`);
@@ -1047,11 +1047,11 @@ class NxdtClient {
             count++;
             [cmdId, cmdData] = await this.getCmd();
 
-            if (cmdId == CONFIG.COMMAND.CANCEL_TRANSFER) {
+            if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) {
                 await this.handleCancelCmd(cmdId, cmdData);
             }
 
-            if (cmdId == CONFIG.COMMAND.END_TRANSFER) {
+            if (cmdId === CONFIG.COMMAND.END_TRANSFER) {
                 break;
             }
 
@@ -1074,14 +1074,14 @@ class NxdtClient {
     /* SESSION */
     async handleStartSessionCmd(cmdId, cmdData) {
         logger.debug('Handling: session start command');
-        await this.assert(cmdId == CONFIG.COMMAND.START_SESSION && cmdData.length == CONFIG.STRUCT.SESSION_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === CONFIG.COMMAND.START_SESSION && cmdData.length === CONFIG.STRUCT.SESSION_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
 
         const [versionMajor, versionMinor, versionMicro, abiVersion, rawVersionCommit] = CONFIG.STRUCT.SESSION_HEADER.unpack(cmdData);
         const [abiMajor, abiMinor] = [((abiVersion >> 4) & 0x0F), (abiVersion & 0x0F)];
         const versionCommit = strStrip(bytesDecode(rawVersionCommit, CONFIG.ABI.TEXT), '\0');
         logger.debug(`Parsed: client info (version=${versionMajor}.${versionMinor}.${versionMicro}, abi=${abiMajor}.${abiMinor}, commit=${versionCommit})`);
 
-        await this.assert(abiMajor == CONFIG.ABI.MAJOR && abiMinor == CONFIG.ABI.MINOR, CONFIG.STATUS.UNSUPPORTED_ABI_VERSION);
+        await this.assert(abiMajor === CONFIG.ABI.MAJOR && abiMinor === CONFIG.ABI.MINOR, CONFIG.STATUS.UNSUPPORTED_ABI_VERSION);
         await this.sendStatus(CONFIG.STATUS.SUCCESS);
     }
 
@@ -1120,7 +1120,7 @@ class NxdtClient {
     }
 
     async handleEndSessionCmd(cmdId, cmdData) {
-        await this.assert(cmdId == CONFIG.COMMAND.END_SESSION && cmdData.length == 0, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === CONFIG.COMMAND.END_SESSION && cmdData.length === 0, CONFIG.STATUS.MALFORMED_CMD);
 
         notify('Disconnecting device');
 
@@ -1131,7 +1131,7 @@ class NxdtClient {
 
     async handleCancelCmd(cmdId, cmdData) {
         logger.debug('Handling: cancel command');
-        await this.assert(cmdId == CONFIG.COMMAND.CANCEL_TRANSFER && cmdData.length == 0, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === CONFIG.COMMAND.CANCEL_TRANSFER && cmdData.length === 0, CONFIG.STATUS.MALFORMED_CMD);
 
         notify('Operation cancelled');
 
@@ -1360,8 +1360,8 @@ function deviceSupport() {
 }
 
 function syncNotify() {
-    const asked = Notification.permission != 'default';
-    const allowed = Notification.permission == 'granted';
+    const asked = Notification.permission !== 'default';
+    const allowed = Notification.permission === 'granted';
     notifyButton.style.display = asked ? 'none' : 'initial';
     return allowed;
 }
