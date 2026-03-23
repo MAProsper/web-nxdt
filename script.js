@@ -691,7 +691,7 @@ class ProgressDialog extends Dialog {
         const prec = this.progress.position;
         const elapsedTime = Date.now() - this.startTime;
         const remainingTime = (elapsedTime / prec) * (1 - prec);
-        const displayTime = elapsedTime > CONFIG.TIME.PROGRESS_ESTIMATE && Number.isFinite(remainingTime);
+        const displayTime = prec > 0 && elapsedTime > CONFIG.TIME.PROGRESS_ESTIMATE && Number.isFinite(remainingTime);
         this.status.innerText = displayTime ? `${this.#formatTime(remainingTime / 1000)} remaining` : '\xa0';
     }
 
@@ -907,6 +907,7 @@ class NxdtClient {
         await file.seek(headerSize);
 
         // File entries
+        let offset = 0;
         while (true) {
             [cmdId, cmdData] = await this.getCmd();
             if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
@@ -918,6 +919,7 @@ class NxdtClient {
 
             success &&= await this.handleFileTransfer(file, fileSize, this.getChecksum(filePath));
             await this.sendStatus(CONFIG.STATUS.SUCCESS);
+            offset += fileSize;
         }
 
         // File header
@@ -926,6 +928,9 @@ class NxdtClient {
         await file.seek(0);
         await file.write(cmdData);
         progressDialog.update(cmdData.length);
+        offset += cmdData.length;
+
+        success &&= offset === (headerSize + dataSize);
 
         return success;
     }
@@ -966,6 +971,7 @@ class NxdtClient {
         let success = true;
 
         // Transfer FS
+        let offset = 0;
         while (true) {
             [cmdId, cmdData] = await this.getCmd();
             if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
@@ -979,12 +985,14 @@ class NxdtClient {
 
                 success &&= await this.handleFileTransfer(file, fileSize);
                 await this.sendStatus(CONFIG.STATUS.SUCCESS);
+                offset += fileSize;
             } finally {
                 this.queueFlush(file.close());
             }
         }
 
         await this.handleEndTransferCmd(cmdId, cmdData);
+        success &&= offset === fsSize;
 
         return success;
     }
@@ -1029,23 +1037,24 @@ class NxdtClient {
         // Transfer Bulk
         let count = 0;
         while (true) {
-            count++;
             [cmdId, cmdData] = await this.getCmd();
             if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
             if (cmdId === CONFIG.COMMAND.END_TRANSFER) break;
-
+            
             const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
             await this.assert(headerSize, CONFIG.STATUS.MALFORMED_CMD);
             const file = await this.makeFile(dir, filePath);
             await this.sendStatus(CONFIG.STATUS.SUCCESS);
-
-            progressDialog.open('Transferring…', filePath, fileSize, `${count}/${bulkCount}`);
+            
+            progressDialog.open('Transferring…', filePath, fileSize, `${count + 1}/${bulkCount}`);
             success &&= await this.handleArchiveTransfer(file, headerSize, fileSize - headerSize);
             this.queueFlush(file.close());
             await this.sendStatus(CONFIG.STATUS.SUCCESS);
+            count++;
         }
 
         await this.handleEndTransferCmd(cmdId, cmdData);
+        success &&= count === bulkCount;
 
         return success;
     }
