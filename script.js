@@ -824,7 +824,7 @@ class NxdtClient14 {
         if (!cmdHeader) cmdHeader = await this.getCmdHeader(timeout);
         const { cmdId, cmdDataSize } = await this.parseCmdHeader(cmdHeader);
         const cmdData = await this.getCmdBlock(cmdDataSize, timeout);
-        return [cmdId, cmdData];
+        return { cmdId, cmdData };
     }
 
     /* ACTIONS */
@@ -884,7 +884,7 @@ class NxdtClient14 {
             if (chunk.length === this.STRUCT.COMMAND_HEADER.size) {
                 const magic = this.STRUCT.COMMAND_HEADER.tokens[0].unpack(chunk);
                 if (magic == this.ABI.MAGIC) {
-                    const [cmdId, cmdData] = await this.getCmd(chunk);
+                    const { cmdId, cmdData } = await this.getCmd(chunk);
                     await this.handleCancelCmd(cmdId, cmdData);
                 }
             }
@@ -918,7 +918,7 @@ class NxdtClient14 {
         // File entries
         let offset = 0;
         while (true) {
-            [cmdId, cmdData] = await this.getCmd();
+            ({ cmdId, cmdData } = await this.getCmd());
             if (cmdId === this.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
             if (cmdId === this.COMMAND.HEADER_TRANSFER) break;
 
@@ -982,7 +982,7 @@ class NxdtClient14 {
         // Transfer FS
         let offset = 0;
         while (true) {
-            [cmdId, cmdData] = await this.getCmd();
+            ({ cmdId, cmdData } = await this.getCmd());
             if (cmdId === this.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
             if (cmdId === this.COMMAND.END_TRANSFER) break;
 
@@ -1046,7 +1046,7 @@ class NxdtClient14 {
         // Transfer Bulk
         let count = 0;
         while (true) {
-            [cmdId, cmdData] = await this.getCmd();
+            ({ cmdId, cmdData } = await this.getCmd());
             if (cmdId === this.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
             if (cmdId === this.COMMAND.END_TRANSFER) break;
 
@@ -1100,7 +1100,7 @@ class NxdtClient14 {
         let success = true;
 
         loop: while (true) {
-            [cmdId, cmdData] = await this.getCmd(undefined, -1);
+            ({ cmdId, cmdData } = await this.getCmd(undefined, -1));
 
             try {
                 switch (cmdId) {
@@ -1248,7 +1248,6 @@ async function closeDevice() {
     setValueText(deviceButton, 'Not connected');
     await deviceButton.device.close();
     deviceButton.device = undefined;
-    appRoot.client = undefined;
 }
 
 async function openDevice(usbDev) {
@@ -1259,8 +1258,9 @@ async function openDevice(usbDev) {
         await closeDevice();
     }
 
+    let device;
     try {
-        deviceButton.device = new UsbBulk(usbDev);
+        device = new UsbBulk(usbDev);
     } catch (e) {
         notify('Device incompatible');
         logger.warn(e);
@@ -1269,22 +1269,23 @@ async function openDevice(usbDev) {
     }
 
     try {
-        await deviceButton.device.open();
+        await device.open();
     } catch (e) {
         notify('Device unresponsive');
         logger.warn(e);
-        await closeDevice();
+        await device.close();
         throw e;
     }
+    deviceButton.device = device;
 
-    appRoot.client = new NxdtClient14(deviceButton.device, () => ({
+    const client = new NxdtClient14(deviceButton.device, () => ({
         directory: directoryButton.directory,
         verify: verifyButton.enabled
     }));
 
     let cmdId, cmdData;
     try {
-        [cmdId, cmdData] = await appRoot.client.getCmd();
+        ({ cmdId, cmdData } = await client.getCmd());
     } catch (e) {
         notify('Application unresponsive');
         logger.warn(e);
@@ -1294,18 +1295,19 @@ async function openDevice(usbDev) {
 
     let abiMajor, abiMinor;
     try {
-        ({ abiMajor, abiMinor } = await appRoot.client.parseStartSessionHeader(cmdId, cmdData));
-        appRoot.client.assert(abiMajor == appRoot.client.VERSION.MAJOR && abiMinor == appRoot.client.VERSION.MINOR, appRoot.client.STATUS.UNSUPPORTED_ABI_VERSION);
-        appRoot.client.sendStatus(appRoot.client.STATUS.SUCCESS);
+        ({ abiMajor, abiMinor } = await client.parseStartSessionHeader(cmdId, cmdData));
+        client.assert(abiMajor == client.VERSION.MAJOR && abiMinor == client.VERSION.MINOR, client.STATUS.UNSUPPORTED_ABI_VERSION);
+        client.sendStatus(client.STATUS.SUCCESS);
     } catch (e) {
         notify('Application incompatible');
         logger.warn(e);
         await closeDevice();
         throw e;
     }
+    appRoot.client = client;
 
-    setValueText(deviceButton, deviceButton.device.device.productName);
     notify('Device connected');
+    setValueText(deviceButton, deviceButton.device.device.productName);
 }
 
 async function handleSession() {
@@ -1316,7 +1318,8 @@ async function handleSession() {
         logger.trace(e);
         throw e;
     } finally {
-        await closeDevice();
+        await closeDevice(deviceButton.device);
+        appRoot.client = undefined;
     }
 
     notify('Device disconnected');
