@@ -21,11 +21,6 @@ function strStrip(str, chars) {
     return strAry.slice(start === -1 ? undefined : start, end === -1 ? undefined : end + 1).join('');
 }
 
-function aryEquals(ary1, ary2) {
-    if (ary1.length !== ary2.length) return false;
-    return ary1.every((e, i) => ary2[i] === e);
-}
-
 // === STRUCT ===
 /* Based on https://github.com/lyngklip/structjs */
 class Struct {
@@ -481,18 +476,31 @@ class UsbBulk {
         logger.debug('Opening: USB device');
 
         await this.device.open();
-        try { await this.device.reset() } catch (e) { logger.warn(e) }
+        await this.cancel();
         await this.device.claimInterface(this.interface);
 
         logger.debug('Opened: USB device');
     }
 
+    async cancel() {
+        logger.debug('Cancelling: USB device');
+
+        try { await this.device.reset() } catch (e) { logger.warn(e) }
+
+        logger.debug('Cancelled: USB device');
+    }
+
+    async reset() {
+        await this.close();
+        await this.open();
+    }
+
     async close() {
         logger.debug('Closing: USB device');
 
-        try { await this.device.reset() } catch (e) { }
-        try { await this.device.releaseInterface(this.interface) } catch (e) { }
-        try { await this.device.close() } catch (e) { }
+        await this.cancel();
+        try { await this.device.releaseInterface(this.interface) } catch (e) { logger.warn(e) }
+        try { await this.device.close() } catch (e) { logger.warn(e) }
 
         logger.debug('Closed: USB device');
     }
@@ -514,7 +522,7 @@ class UsbBulk {
             transfer = await promise;
         } catch (e) {
             if (!(e instanceof TimeoutError)) throw e;
-            await this.device.reset();
+            await this.cancel();
             transfer = {status: 'ok', data: new DataView(new ArrayBuffer(0))};
         }
         assert(transfer.status === 'ok', 'USB.read (error)');
@@ -544,7 +552,7 @@ class UsbBulk {
             transfer = await promise;
         } catch (e) {
             if (!(e instanceof TimeoutError)) throw e;
-            await this.device.reset();
+            await this.cancel();
             transfer = {status: 'ok', bytesWritten: 0};
         }
         assert(transfer.status === 'ok', 'USB.write (error)');
@@ -697,7 +705,7 @@ class FsQueue {
     }
 }
 
-class NxdtClient14 {
+class NxdtClient {
     VERSION = {
         MAJOR: 1,
         MINOR: 4
@@ -742,10 +750,10 @@ class NxdtClient14 {
         BULK_HEADER: new Struct('<I12x')
     };
 
-    constructor(device, getContext) {
-        this.device = device;
+    constructor(getContext) {
         this.getContext = getContext;
         this.fsCommit = new FsQueue();
+        this.device = this.context.device;
     }
 
     /* HELPERS */
@@ -1146,6 +1154,43 @@ class NxdtClient14 {
     }
 }
 
+class NxdtClientCompat1 extends NxdtClient {
+    VERSION = {
+        MAJOR: 1,
+        MINOR: 3
+    };
+
+    COMMAND = {
+        START_SESSION: 0,
+        FILE_TRANSFER: 1,
+        CANCEL_TRANSFER: 2,
+        HEADER_TRANSFER: 3,
+        END_SESSION: 4,
+        FS_TRANSFER: 5,
+        END_TRANSFER: 6,
+        BULK_TRANSFER: 7
+    };
+
+    async handleBulkCmd(cmdId, cmdData) {
+        logger.info('Requested: bulk transfer command');
+        await this.parseBulkCmdHeader(cmdId, cmdData);
+        await this.sendStatus(this.STATUS.SUCCESS);
+        return true;
+    }
+}
+
+class NxdtClientCompat0 extends NxdtClientCompat1 {
+    VERSION = {
+        MAJOR: 1,
+        MINOR: 0
+    };
+
+    USB = {
+        ...this.USB,
+        TIMEOUT: 5000
+    };
+}
+
 // === APP ===
 async function requestDirectory() {
     spinnerDialog.open('Requesting…', 'Destination directory');
@@ -1278,10 +1323,7 @@ async function openDevice(usbDev) {
     }
     deviceButton.device = device;
 
-    const client = new NxdtClient14(deviceButton.device, () => ({
-        directory: directoryButton.directory,
-        verify: verifyButton.enabled
-    }));
+    const client = new NxdtClient(getContext);
 
     let cmdId, cmdData;
     try {
@@ -1323,6 +1365,14 @@ async function handleSession() {
     }
 
     notify('Device disconnected');
+}
+
+function getContext() {
+    return {
+        device: deviceButton.device,
+        directory: directoryButton.directory,
+        verify: verifyButton.enabled
+    }
 }
 
 function platformInfo() {
