@@ -1089,7 +1089,7 @@ class NxdtClient14 {
         const [versionMajor, versionMinor, versionMicro, abiVersion, rawVersionCommit] = this.STRUCT.SESSION_HEADER.unpack(cmdData);
         const [abiMajor, abiMinor] = [((abiVersion >> 4) & 0x0F), ((abiVersion >> 0) & 0x0F)];
         const versionCommit = strStrip(bytesDecode(rawVersionCommit, this.ABI.TEXT), '\0');
-        logger.debug(`Parsed: client info (version=${versionMajor}.${versionMinor}.${versionMicro}, abi=${abiMajor}.${abiMinor}, commit=${versionCommit})`);
+        logger.debug(`Parsed: client info (version=${versionMajor}.${versionMinor}.${versionMicro}, commit=${versionCommit}, abi=${abiMajor}.${abiMinor})`);
 
         return { versionMajor, versionMinor, versionMicro, versionCommit, abiMajor, abiMinor };
     }
@@ -1295,8 +1295,8 @@ async function openDevice(usbDev) {
     let abiMajor, abiMinor;
     try {
         ({ abiMajor, abiMinor } = await appRoot.client.parseStartSessionHeader(cmdId, cmdData));
-        appRoot.client.assert(abiMajor == appRoot.client.VERSION.MAJOR && abiMinor == appRoot.client.VERSION.MINOR)
-        appRoot.client.sendStatus();
+        appRoot.client.assert(abiMajor == appRoot.client.VERSION.MAJOR && abiMinor == appRoot.client.VERSION.MINOR, appRoot.client.STATUS.UNSUPPORTED_ABI_VERSION);
+        appRoot.client.sendStatus(appRoot.client.STATUS.SUCCESS);
     } catch (e) {
         notify('Application incompatible');
         logger.warn(e);
