@@ -370,63 +370,12 @@ class Logger {
 }
 
 // === NXDT ===
-const CONFIG = {
-    DEVICE: {
-        vendorId: 0x057E,
-        productId: 0x3000,
-        manufacturerName: 'DarkMatterCore',
-        productName: 'nxdumptool'
-    },
-    ABI: {
-        MAJOR: 1,
-        MINOR: 4,
-        TEXT: 'utf8'
-    },
-    COMMAND: {
-        START_SESSION: 0,
-        END_SESSION: 1,
-        FILE_TRANSFER: 2,
-        HEADER_TRANSFER: 3,
-        CANCEL_TRANSFER: 4,
-        FS_TRANSFER: 5,
-        BULK_TRANSFER: 6,
-        END_TRANSFER: 7
-    },
-    SIZE: {
-        FILE_BLOCK_TRANSFER: 0x800000,
-        FILE_PATH_LENGTH: 0x301,
-    },
-    STATUS: {
-        SUCCESS: 0,
-        INVALID_MAGIC_WORD: 4,
-        UNSUPPORTED_CMD: 5,
-        UNSUPPORTED_ABI_VERSION: 6,
-        MALFORMED_CMD: 7,
-        HOST_IO_ERROR: 8,
-    },
-    TIME: {
-        TOAST: 3000,
-        PROGRESS_UPDATE: 300,
-        PROGRESS_ESTIMATE: 3000,
-        TRANSFER_TIMEOUT: 10000,
-    },
-    VERSION: {
-        MAJOR: 2,
-        MINOR: 2,
-        MICRO: 0
-    }
-}
-
-CONFIG.ABI.MAGIC = strEncode('NXDT', CONFIG.ABI.TEXT);
-
-CONFIG.STRUCT = {
-    COMMAND_HEADER: new Struct('<4sIII'),
-    STATUS_RESPONSE: new Struct('<4sIH6x'),
-    SESSION_HEADER: new Struct('<BBBB8s4x'),
-    FILE_HEADER: new Struct(`<QII${CONFIG.SIZE.FILE_PATH_LENGTH}s15x`),
-    FS_HEADER: new Struct(`<Q${CONFIG.SIZE.FILE_PATH_LENGTH}s7x`),
-    BULK_HEADER: new Struct('<I12x')
-}
+const MAGIC = 'NXDT';
+const VERSION = {
+    MAJOR: 2,
+    MINOR: 3,
+    MICRO: 0
+};
 
 function assert(value, message) {
     if (value) return;
@@ -439,12 +388,13 @@ function setValueText(e, value) {
 }
 
 function notify(message, important = false) {
+    const TIMEOUT = 3000;
     logger.info(`Notification: ${message}`);
     if (important) new Notification(document.title, { body: message });
 
     // Setup toast
-    const dialogs = document.querySelectorAll('dialog');
     const toast = document.getElementById('toast');
+    const dialogs = document.querySelectorAll('dialog');
     toast.innerText = message;
 
     // Ensure toast
@@ -463,7 +413,7 @@ function notify(message, important = false) {
         dialogs.forEach(e => e.removeEventListener('toggle', toast.forcePopover));
         toast.togglePopover(false);
         delete toast.timeout;
-    }, CONFIG.TIME.TOAST);
+    }, TIMEOUT);
 }
 
 class TimeoutError extends Error {}
@@ -488,16 +438,21 @@ async function makeFile(dir, filePath) {
 }
 
 class UsbBulk {
+    static VENDOR_ID = 0x057E;
+    static PRODUCT_ID = 0x3000;
+    static MANUFACTURER_NAME = 'DarkMatterCore';
+    static PRODUCT_NAME = 'nxdumptool';
+
     constructor(device) {
         logger.debug('Creating: USB device');
         this.device = device;
 
-        assert(this.device.manufacturerId === CONFIG.DEVICE.manufacturerId && this.device.productId === CONFIG.DEVICE.productId, 'Invalid manufacturer/product IDs!')
+        assert(this.device.vendorId === UsbBulk.VENDOR_ID && this.device.productId === UsbBulk.PRODUCT_ID, 'Invalid vendor/product IDs!')
 
         // Check if the product and manufacturer strings match the ones used by nxdumptool.
         // TODO: enable product string check whenever we're ready for a release.
-        // this.device.productName === NXDT.DEVICE.productName
-        assert(this.device.manufacturerName === CONFIG.DEVICE.manufacturerName, 'Invalid manufacturer/product strings!');
+        // this.device.productName === UsbBulk.productName
+        assert(this.device.manufacturerName === UsbBulk.MANUFACTURER_NAME, 'Invalid manufacturer/product strings!');
 
         // Get default configuration descriptor.
         const configuration = this.device.configuration;
@@ -644,6 +599,9 @@ class SpinnerDialog extends Dialog {
 }
 
 class ProgressDialog extends Dialog {
+    TIME_UPDATE = 300;
+    TIME_ESTIMATE = 3000;
+
     constructor() {
         super('progress');
         this.progress = this.dialog.querySelector('progress');
@@ -655,17 +613,17 @@ class ProgressDialog extends Dialog {
         this.startTime = Date.now();
         this.progress.value = 0;
         this.progress.max = max;
-        this.label.dataset.after = note;
+        this.label.dataset.note = note;
         this.update(0);
         this.updateEta();
         super.open(title, text);
-        clearInterval(this.etaInterval);
-        this.etaInterval = setInterval(() => this.updateEta(), CONFIG.TIME.PROGRESS_UPDATE);
+        clearInterval(this.intervalEta);
+        this.intervalEta = setInterval(() => this.updateEta(), this.TIME_UPDATE);
     }
 
     close() {
-        clearInterval(this.etaInterval);
-        delete this.etaInterval;
+        clearInterval(this.intervalEta);
+        delete this.intervalEta;
         super.close();
     }
 
@@ -691,7 +649,7 @@ class ProgressDialog extends Dialog {
         const prec = this.progress.position;
         const elapsedTime = Date.now() - this.startTime;
         const remainingTime = (elapsedTime / prec) * (1 - prec);
-        const displayTime = prec > 0 && elapsedTime > CONFIG.TIME.PROGRESS_ESTIMATE && Number.isFinite(remainingTime);
+        const displayTime = prec > 0 && elapsedTime > this.TIME_ESTIMATE && Number.isFinite(remainingTime);
         this.status.innerText = displayTime ? `${this.#formatTime(remainingTime / 1000)} remaining` : '\xa0';
     }
 
@@ -701,19 +659,101 @@ class ProgressDialog extends Dialog {
     }
 }
 
-class NxdtClient {
-    constructor(getOptions) {
-        this.fsQueue = new Set();
-        this.getOptions = getOptions;
-        this.device = this.options.device;
+class FsQueue {
+    queue = new Set();
+
+    constructor() {
+        return this.commit.bind(this);
+    }
+
+    open() {
+        progressDialog.dialog.addEventListener('toggle', this.handle);
+    }
+
+    close() {
+        progressDialog.dialog.removeEventListener('toggle', this.handle);
+        spinnerDialog.close();
+    }
+
+    handle(event) {
+        switch (event.newState) {
+            case 'open':
+                spinnerDialog.close();
+                break;
+            case 'closed':
+                spinnerDialog.open('Finishing…', 'Wait a moment');
+                break;
+        }
+    }
+
+    commit(promise) {
+        logger.debug('File: commit to disk');
+        if (!this.queue.size) this.open();
+        this.queue.add(promise);
+        promise.then(() => {
+            this.queue.delete(promise);
+            if (!this.queue.size) this.close();
+        });
+    }
+}
+
+class NxdtClient14 {
+    VERSION = {
+        MAJOR: 1,
+        MINOR: 4
+    };
+
+    USB = {
+        TIMEOUT: 10000,
+        BULK_SIZE: 0x800000
+    };
+
+    ABI = {
+        TEXT: 'utf8',
+        MAGIC: 0x5444584E
+    };
+
+    COMMAND = {
+        START_SESSION: 0,
+        END_SESSION: 1,
+        FILE_TRANSFER: 2,
+        HEADER_TRANSFER: 3,
+        CANCEL_TRANSFER: 4,
+        FS_TRANSFER: 5,
+        BULK_TRANSFER: 6,
+        END_TRANSFER: 7
+    };
+
+    STATUS = {
+        SUCCESS: 0,
+        INVALID_MAGIC_WORD: 4,
+        UNSUPPORTED_CMD: 5,
+        UNSUPPORTED_ABI_VERSION: 6,
+        MALFORMED_CMD: 7,
+        HOST_IO_ERROR: 8
+    };
+
+    STRUCT = {
+        COMMAND_HEADER: new Struct('<IIII'),
+        STATUS_RESPONSE: new Struct('<IIH6x'),
+        SESSION_HEADER: new Struct('<BBBB8s4x'),
+        FILE_HEADER: new Struct(`<QII769s15x`),
+        FS_HEADER: new Struct(`<Q769s7x`),
+        BULK_HEADER: new Struct('<I12x')
+    };
+
+    constructor(device, getContext) {
+        this.device = device;
+        this.getContext = getContext;
+        this.fsCommit = new FsQueue();
     }
 
     /* HELPERS */
-    get options() {
-        return this.getOptions();
+    get context() {
+        return this.getContext();
     }
 
-    async assert(value, code = CONFIG.STATUS.HOST_IO_ERROR) {
+    async assert(value, code = this.STATUS.HOST_IO_ERROR) {
         try {
             return assert(value, `Assert failed (code=${code})!`);
         } catch (e) {
@@ -726,62 +766,32 @@ class NxdtClient {
         try {
             return await makeFile(dir, filePath);
         } catch (e) {
-            await this.sendStatus(CONFIG.STATUS.HOST_IO_ERROR);
+            await this.sendStatus(this.STATUS.HOST_IO_ERROR);
             throw e;
         }
     }
 
-    queueFlush(promise) {
-        logger.debug('File: flushing to disk');
-
-        if (!this.fsQueue.size) {
-            this.fsQueueHandle = (event) => {
-                switch (event.newState) {
-                    case 'open':
-                        spinnerDialog.close();
-                        break;
-                    case 'closed':
-                        spinnerDialog.open('Finishing…', 'Wait a moment');
-                        break;
-                }
-            }
-            progressDialog.dialog.addEventListener('toggle', this.fsQueueHandle);
-        }
-
-        this.fsQueue.add(promise);
-        promise.then(() => {
-            this.fsQueue.delete(promise);
-
-            if (!this.fsQueue.size) {
-                progressDialog.dialog.removeEventListener('toggle', this.fsQueueHandle);
-                delete this.fsQueueClose;
-                delete this.fsQueueOpen;
-                spinnerDialog.close();
-            }
-        });
-    }
-
     getChecksum(path) {
-        if (!this.options.verify) return;
+        if (!this.context.verify) return;
         return /(?<=^|\/)(?<hash>[0-9a-f]{32})(\.[^\/]+)*\.\x6e\x63\x61$/.exec(path)?.groups?.hash;
     }
 
     /* PROTOCOL */
-    async sendStatus(code) {
+    async sendStatus(code = this.STATUS.SUCCESS) {
         logger.debug(`Sending: status (${code})`)
 
-        const status = CONFIG.STRUCT.STATUS_RESPONSE.pack(CONFIG.ABI.MAGIC, code, this.device.packetSize);
-        const wr = await this.device.write(status, CONFIG.TIME.TRANSFER_TIMEOUT);
+        const status = this.STRUCT.STATUS_RESPONSE.pack(this.ABI.MAGIC, code, this.device.packetSize);
+        const wr = await this.device.write(status, this.USB.TIMEOUT);
 
         assert(wr === status.length, 'Failed to send status code!');
         logger.debug(`Send: status`)
     }
 
-    async getCmdHeader(timeout = CONFIG.TIME.TRANSFER_TIMEOUT) {
+    async getCmdHeader(timeout = this.USB.TIMEOUT) {
         logger.debug('Receiving: command header');
 
-        const cmdHeader = await this.device.read(CONFIG.STRUCT.COMMAND_HEADER.size, timeout);
-        assert(cmdHeader.length === CONFIG.STRUCT.COMMAND_HEADER.size, `Failed to read command header! (got=${cmdHeader.length} expect=${CONFIG.STRUCT.COMMAND_HEADER.size})`);
+        const cmdHeader = await this.device.read(this.STRUCT.COMMAND_HEADER.size, timeout);
+        assert(cmdHeader.length === this.STRUCT.COMMAND_HEADER.size, `Failed to read command header! (got=${cmdHeader.length} expect=${this.STRUCT.COMMAND_HEADER.size})`);
 
         logger.debug('Received: command header');
         return cmdHeader;
@@ -789,18 +799,18 @@ class NxdtClient {
 
     async parseCmdHeader(cmdHeader) {
         logger.debug('Parsing: command header');
-        assert(cmdHeader && cmdHeader.length === CONFIG.STRUCT.COMMAND_HEADER.size, `Command header is the wrong size! (got=${cmdHeader.length} expect=${CONFIG.STRUCT.COMMAND_HEADER.size})`);
+        assert(cmdHeader && cmdHeader.length === this.STRUCT.COMMAND_HEADER.size, `Command header is the wrong size! (got=${cmdHeader.length} expect=${this.STRUCT.COMMAND_HEADER.size})`);
 
-        const [magic, cmdId, cmdDataSize, ..._] = CONFIG.STRUCT.COMMAND_HEADER.unpack(cmdHeader);
-        logger.debug(`Parsed: command header (magic=${bytesDecode(magic, CONFIG.ABI.TEXT)}, cmdId=${cmdId}, cmdDataSize=${cmdDataSize})`);
+        const [magic, cmdId, cmdDataSize, ..._] = this.STRUCT.COMMAND_HEADER.unpack(cmdHeader);
+        logger.debug(`Parsed: command header (magic=${magic}, cmdId=${cmdId}, cmdDataSize=${cmdDataSize})`);
 
-        await this.assert(aryEquals(magic, CONFIG.ABI.MAGIC), CONFIG.STATUS.INVALID_MAGIC_WORD);
-        await this.assert(Object.values(CONFIG.COMMAND).includes(cmdId), CONFIG.STATUS.UNSUPPORTED_CMD);
+        await this.assert(magic == this.ABI.MAGIC, this.STATUS.INVALID_MAGIC_WORD);
+        await this.assert(Object.values(this.COMMAND).includes(cmdId), this.STATUS.UNSUPPORTED_CMD);
 
-        return [cmdId, cmdDataSize];
+        return { cmdId, cmdDataSize };
     }
 
-    async getCmdBlock(cmdDataSize, timeout = CONFIG.TIME.TRANSFER_TIMEOUT) {
+    async getCmdBlock(cmdDataSize, timeout = this.USB.TIMEOUT) {
         logger.debug('Receiving: command block');
 
         const cmdData = cmdDataSize ? await this.device.read(cmdDataSize, timeout) : new Uint8Array();
@@ -810,23 +820,23 @@ class NxdtClient {
         return cmdData;
     }
 
-    async getCmd(cmdHeader = undefined, timeout = CONFIG.TIME.TRANSFER_TIMEOUT) {
+    async getCmd(cmdHeader = undefined, timeout = this.USB.TIMEOUT) {
         if (!cmdHeader) cmdHeader = await this.getCmdHeader(timeout);
-        const [cmdId, cmdDataLength] = await this.parseCmdHeader(cmdHeader);
-        const cmdData = await this.getCmdBlock(cmdDataLength, timeout);
+        const { cmdId, cmdDataSize } = await this.parseCmdHeader(cmdHeader);
+        const cmdData = await this.getCmdBlock(cmdDataSize, timeout);
         return [cmdId, cmdData];
     }
 
     /* ACTIONS */
     async handleFileCmd(cmdId, cmdData) {
         logger.info('Requested: file transfer command');
-        const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
+        const { filePath, fileSize, headerSize } = await this.parseFileHeader(cmdId, cmdData);
         let success = true;
 
-        const dir = this.options.directory;
+        const dir = this.context.directory;
         const file = await this.makeFile(dir, filePath);
         try {
-            await this.sendStatus(CONFIG.STATUS.SUCCESS);
+            await this.sendStatus(this.STATUS.SUCCESS);
 
             progressDialog.open('Transferring…', filePath, fileSize);
             if (headerSize) {
@@ -834,8 +844,8 @@ class NxdtClient {
             } else {
                 success &&= await this.handleFileTransfer(file, fileSize);
             }
-            this.queueFlush(file.close());
-            await this.sendStatus(CONFIG.STATUS.SUCCESS);
+            this.fsCommit(file.close());
+            await this.sendStatus(this.STATUS.SUCCESS);
         } finally {
             progressDialog.close();
         }
@@ -846,17 +856,16 @@ class NxdtClient {
 
     async parseFileHeader(cmdId, cmdData) {
         logger.debug('Parsing: file header');
-        await this.assert(cmdId === CONFIG.COMMAND.FILE_TRANSFER && cmdData.length === CONFIG.STRUCT.FILE_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === this.COMMAND.FILE_TRANSFER && cmdData.length === this.STRUCT.FILE_HEADER.size, this.STATUS.MALFORMED_CMD);
 
-        const [fileSize, filePathLength, headerSize, rawFilePath] = CONFIG.STRUCT.FILE_HEADER.unpack(cmdData);
-        const filePath = strStrip(bytesDecode(rawFilePath, CONFIG.ABI.TEXT), '\0');
+        const [fileSize, filePathLength, headerSize, rawFilePath] = this.STRUCT.FILE_HEADER.unpack(cmdData);
+        const filePath = strStrip(bytesDecode(rawFilePath, this.ABI.TEXT), '\0');
         logger.debug(`Parsed: file header (fileSize=${fileSize}, filePathLength=${filePathLength}, headerSize=${headerSize}, filePath=${filePath})`);
 
-        await this.assert(fileSize <= Number.MAX_SAFE_INTEGER, CONFIG.STATUS.HOST_IO_ERROR);
-        await this.assert(headerSize < fileSize, CONFIG.STATUS.MALFORMED_CMD);
-        await this.assert(filePathLength > 0 && filePathLength <= CONFIG.SIZE.FILE_PATH_LENGTH, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(fileSize <= Number.MAX_SAFE_INTEGER, this.STATUS.HOST_IO_ERROR);
+        await this.assert(headerSize < fileSize, this.STATUS.MALFORMED_CMD);
 
-        return [filePath, fileSize, headerSize];
+        return { filePath, fileSize, headerSize };
     }
 
     async handleFileTransfer(file, size, hash = undefined) {
@@ -867,14 +876,14 @@ class NxdtClient {
 
         let offset = 0;
         while (offset < size) {
-            const chunkSize = Math.min(CONFIG.SIZE.FILE_BLOCK_TRANSFER, size - offset);
-            const chunk = await this.device.readChunk(chunkSize, CONFIG.TIME.TRANSFER_TIMEOUT);
-            if (chunk.length === 0) await this.handleCancelCmd(CONFIG.COMMAND.CANCEL_TRANSFER, chunk);
+            const chunkSize = Math.min(this.USB.BULK_SIZE, size - offset);
+            const chunk = await this.device.readChunk(chunkSize, this.USB.TIMEOUT);
+            if (chunk.length === 0) await this.handleCancelCmd(this.COMMAND.CANCEL_TRANSFER, chunk);
 
             // Check if we're dealing with a command
-            if (chunk.length === CONFIG.STRUCT.COMMAND_HEADER.size) {
-                const magic = CONFIG.STRUCT.COMMAND_HEADER.tokens[0].unpack(chunk);
-                if (aryEquals(magic, CONFIG.ABI.MAGIC)) {
+            if (chunk.length === this.STRUCT.COMMAND_HEADER.size) {
+                const magic = this.STRUCT.COMMAND_HEADER.tokens[0].unpack(chunk);
+                if (magic == this.ABI.MAGIC) {
                     const [cmdId, cmdData] = await this.getCmd(chunk);
                     await this.handleCancelCmd(cmdId, cmdData);
                 }
@@ -886,7 +895,7 @@ class NxdtClient {
             progressDialog.update(chunk.length);
             offset += chunk.length;
         }
-        await this.device.readEnd(CONFIG.TIME.TRANSFER_TIMEOUT);
+        await this.device.readEnd(this.USB.TIMEOUT);
         success &&= offset === size;
 
         // Handle checksum
@@ -910,20 +919,20 @@ class NxdtClient {
         let offset = 0;
         while (true) {
             [cmdId, cmdData] = await this.getCmd();
-            if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
-            if (cmdId === CONFIG.COMMAND.HEADER_TRANSFER) break;
+            if (cmdId === this.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
+            if (cmdId === this.COMMAND.HEADER_TRANSFER) break;
 
-            const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
-            await this.assert(!headerSize, CONFIG.STATUS.MALFORMED_CMD);
-            await this.sendStatus(CONFIG.STATUS.SUCCESS);
+            const { filePath, fileSize, headerSize } = await this.parseFileHeader(cmdId, cmdData);
+            await this.assert(!headerSize, this.STATUS.MALFORMED_CMD);
+            await this.sendStatus(this.STATUS.SUCCESS);
 
             success &&= await this.handleFileTransfer(file, fileSize, this.getChecksum(filePath));
-            await this.sendStatus(CONFIG.STATUS.SUCCESS);
+            await this.sendStatus(this.STATUS.SUCCESS);
             offset += fileSize;
         }
 
         // File header
-        await this.assert(cmdId === CONFIG.COMMAND.HEADER_TRANSFER && cmdData.length === headerSize, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === this.COMMAND.HEADER_TRANSFER && cmdData.length === headerSize, this.STATUS.MALFORMED_CMD);
 
         await file.seek(0);
         await file.write(cmdData);
@@ -937,8 +946,8 @@ class NxdtClient {
 
     async handleFsCmd(cmdId, cmdData) {
         logger.info('Requested: fs transfer command');
-        const [fsSize, fsPath] = await this.parseFsCmdHeader(cmdId, cmdData);
-        await this.sendStatus(CONFIG.STATUS.SUCCESS);
+        const { fsSize, fsPath } = await this.parseFsCmdHeader(cmdId, cmdData);
+        await this.sendStatus(this.STATUS.SUCCESS);
         let success = true;
 
         progressDialog.open('Transferring…', fsPath, fsSize);
@@ -954,19 +963,19 @@ class NxdtClient {
 
     async parseFsCmdHeader(cmdId, cmdData) {
         logger.debug('Parsing: FS header');
-        await this.assert(cmdId === CONFIG.COMMAND.FS_TRANSFER && cmdData.length === CONFIG.STRUCT.FS_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === this.COMMAND.FS_TRANSFER && cmdData.length === this.STRUCT.FS_HEADER.size, this.STATUS.MALFORMED_CMD);
 
-        const [fsSize, rawFsPath] = CONFIG.STRUCT.FS_HEADER.unpack(cmdData);
-        const fsPath = strStrip(bytesDecode(rawFsPath, CONFIG.ABI.TEXT), '\0');
-        await this.assert(fsSize <= Number.MAX_SAFE_INTEGER, CONFIG.STATUS.HOST_IO_ERROR);
+        const [fsSize, rawFsPath] = this.STRUCT.FS_HEADER.unpack(cmdData);
+        const fsPath = strStrip(bytesDecode(rawFsPath, this.ABI.TEXT), '\0');
+        await this.assert(fsSize <= Number.MAX_SAFE_INTEGER, this.STATUS.HOST_IO_ERROR);
         logger.info(`Parsed: fs header (fsSize=${fsSize}, fsPath=${fsPath})`);
 
-        return [fsSize, fsPath];
+        return { fsSize, fsPath };
     }
 
     async handleFsTransfer(fsSize) {
         logger.debug('Handling: fs transfer');
-        const dir = this.options.directory;
+        const dir = this.context.directory;
         let cmdId, cmdData;
         let success = true;
 
@@ -974,20 +983,20 @@ class NxdtClient {
         let offset = 0;
         while (true) {
             [cmdId, cmdData] = await this.getCmd();
-            if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
-            if (cmdId === CONFIG.COMMAND.END_TRANSFER) break;
+            if (cmdId === this.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
+            if (cmdId === this.COMMAND.END_TRANSFER) break;
 
-            const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
-            await this.assert(!headerSize, CONFIG.STATUS.MALFORMED_CMD);
+            const { filePath, fileSize, headerSize } = await this.parseFileHeader(cmdId, cmdData);
+            await this.assert(!headerSize, this.STATUS.MALFORMED_CMD);
             const file = await this.makeFile(dir, filePath);
             try {
-                await this.sendStatus(CONFIG.STATUS.SUCCESS);
+                await this.sendStatus(this.STATUS.SUCCESS);
 
                 success &&= await this.handleFileTransfer(file, fileSize);
-                await this.sendStatus(CONFIG.STATUS.SUCCESS);
+                await this.sendStatus(this.STATUS.SUCCESS);
                 offset += fileSize;
             } finally {
-                this.queueFlush(file.close());
+                this.fsCommit(file.close());
             }
         }
 
@@ -998,14 +1007,14 @@ class NxdtClient {
     }
 
     async handleEndTransferCmd(cmdId, cmdData) {
-        await this.assert(cmdId === CONFIG.COMMAND.END_TRANSFER && cmdData.length === 0, CONFIG.STATUS.MALFORMED_CMD);
-        await this.sendStatus(CONFIG.STATUS.SUCCESS);
+        await this.assert(cmdId === this.COMMAND.END_TRANSFER && cmdData.length === 0, this.STATUS.MALFORMED_CMD);
+        await this.sendStatus(this.STATUS.SUCCESS);
     }
 
     async handleBulkCmd(cmdId, cmdData) {
         logger.info('Requested: bulk transfer command');
-        const [bulkCount] = await this.parseBulkCmdHeader(cmdId, cmdData);
-        await this.sendStatus(CONFIG.STATUS.SUCCESS);
+        const { bulkCount } = await this.parseBulkCmdHeader(cmdId, cmdData);
+        await this.sendStatus(this.STATUS.SUCCESS);
         let success = true;
 
         try {
@@ -1020,17 +1029,17 @@ class NxdtClient {
 
     async parseBulkCmdHeader(cmdId, cmdData) {
         logger.debug('Parsing: bulk header');
-        await this.assert(cmdId === CONFIG.COMMAND.BULK_TRANSFER && cmdData.length === CONFIG.STRUCT.BULK_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === this.COMMAND.BULK_TRANSFER && cmdData.length === this.STRUCT.BULK_HEADER.size, this.STATUS.MALFORMED_CMD);
 
-        const [bulkCount] = CONFIG.STRUCT.BULK_HEADER.unpack(cmdData);
+        const [bulkCount] = this.STRUCT.BULK_HEADER.unpack(cmdData);
         logger.info(`Parsed: bulk header (bulkCount=${bulkCount})`);
 
-        return [bulkCount];
+        return { bulkCount };
     }
 
     async handleBulkTransfer(bulkCount) {
         logger.debug('Handling: bulk transfer');
-        const dir = this.options.directory;
+        const dir = this.context.directory;
         let cmdId, cmdData;
         let success = true;
 
@@ -1038,18 +1047,18 @@ class NxdtClient {
         let count = 0;
         while (true) {
             [cmdId, cmdData] = await this.getCmd();
-            if (cmdId === CONFIG.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
-            if (cmdId === CONFIG.COMMAND.END_TRANSFER) break;
-            
-            const [filePath, fileSize, headerSize] = await this.parseFileHeader(cmdId, cmdData);
-            await this.assert(headerSize, CONFIG.STATUS.MALFORMED_CMD);
+            if (cmdId === this.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
+            if (cmdId === this.COMMAND.END_TRANSFER) break;
+
+            const { filePath, fileSize, headerSize } = await this.parseFileHeader(cmdId, cmdData);
+            await this.assert(headerSize, this.STATUS.MALFORMED_CMD);
             const file = await this.makeFile(dir, filePath);
-            await this.sendStatus(CONFIG.STATUS.SUCCESS);
-            
+            await this.sendStatus(this.STATUS.SUCCESS);
+
             progressDialog.open('Transferring…', filePath, fileSize, `${count + 1}/${bulkCount}`);
             success &&= await this.handleArchiveTransfer(file, headerSize, fileSize - headerSize);
-            this.queueFlush(file.close());
-            await this.sendStatus(CONFIG.STATUS.SUCCESS);
+            this.fsCommit(file.close());
+            await this.sendStatus(this.STATUS.SUCCESS);
             count++;
         }
 
@@ -1062,15 +1071,27 @@ class NxdtClient {
     /* SESSION */
     async handleStartSessionCmd(cmdId, cmdData) {
         logger.debug('Handling: session start command');
-        await this.assert(cmdId === CONFIG.COMMAND.START_SESSION && cmdData.length === CONFIG.STRUCT.SESSION_HEADER.size, CONFIG.STATUS.MALFORMED_CMD);
+        const { abiMajor, abiMinor } = await this.parseStartSessionHeader(cmdId, cmdData);
+        let success = true;
 
-        const [versionMajor, versionMinor, versionMicro, abiVersion, rawVersionCommit] = CONFIG.STRUCT.SESSION_HEADER.unpack(cmdData);
-        const [abiMajor, abiMinor] = [((abiVersion >> 4) & 0x0F), (abiVersion & 0x0F)];
-        const versionCommit = strStrip(bytesDecode(rawVersionCommit, CONFIG.ABI.TEXT), '\0');
+        await this.assert(abiMajor === this.VERSION.MAJOR && abiMinor === this.VERSION.MINOR, this.STATUS.UNSUPPORTED_ABI_VERSION);
+        await this.sendStatus(this.STATUS.SUCCESS);
+
+        success &&= await this.handleSessionTransfer()
+
+        return success;
+    }
+
+    async parseStartSessionHeader(cmdId, cmdData) {
+        logger.debug('Parsing: session header');
+        await this.assert(cmdId === this.COMMAND.START_SESSION && cmdData.length === this.STRUCT.SESSION_HEADER.size, this.STATUS.MALFORMED_CMD);
+
+        const [versionMajor, versionMinor, versionMicro, abiVersion, rawVersionCommit] = this.STRUCT.SESSION_HEADER.unpack(cmdData);
+        const [abiMajor, abiMinor] = [((abiVersion >> 4) & 0x0F), ((abiVersion >> 0) & 0x0F)];
+        const versionCommit = strStrip(bytesDecode(rawVersionCommit, this.ABI.TEXT), '\0');
         logger.debug(`Parsed: client info (version=${versionMajor}.${versionMinor}.${versionMicro}, abi=${abiMajor}.${abiMinor}, commit=${versionCommit})`);
 
-        await this.assert(abiMajor === CONFIG.ABI.MAJOR && abiMinor === CONFIG.ABI.MINOR, CONFIG.STATUS.UNSUPPORTED_ABI_VERSION);
-        await this.sendStatus(CONFIG.STATUS.SUCCESS);
+        return { versionMajor, versionMinor, versionMicro, versionCommit, abiMajor, abiMinor };
     }
 
     async handleSessionTransfer() {
@@ -1083,19 +1104,19 @@ class NxdtClient {
 
             try {
                 switch (cmdId) {
-                    case CONFIG.COMMAND.FILE_TRANSFER:
+                    case this.COMMAND.FILE_TRANSFER:
                         success &&= await this.handleFileCmd(cmdId, cmdData);
                         break;
-                    case CONFIG.COMMAND.FS_TRANSFER:
+                    case this.COMMAND.FS_TRANSFER:
                         success &&= await this.handleFsCmd(cmdId, cmdData);
                         break;
-                    case CONFIG.COMMAND.BULK_TRANSFER:
+                    case this.COMMAND.BULK_TRANSFER:
                         success &&= await this.handleBulkCmd(cmdId, cmdData);
                         break;
-                    case CONFIG.COMMAND.END_SESSION:
+                    case this.COMMAND.END_SESSION:
                         break loop;
                     default:
-                        await this.sendStatus(CONFIG.STATUS.MALFORMED_CMD);
+                        await this.sendStatus(this.STATUS.MALFORMED_CMD);
                 }
             } catch (e) {
                 if (!(e instanceof NxdtCancelError)) throw e;
@@ -1108,23 +1129,19 @@ class NxdtClient {
     }
 
     async handleEndSessionCmd(cmdId, cmdData) {
-        await this.assert(cmdId === CONFIG.COMMAND.END_SESSION && cmdData.length === 0, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === this.COMMAND.END_SESSION && cmdData.length === 0, this.STATUS.MALFORMED_CMD);
+        await this.sendStatus(this.STATUS.SUCCESS);
 
         notify('Disconnecting device');
-
-        await this.sendStatus(CONFIG.STATUS.SUCCESS);
-
         return true;
     }
 
     async handleCancelCmd(cmdId, cmdData) {
         logger.debug('Handling: cancel command');
-        await this.assert(cmdId === CONFIG.COMMAND.CANCEL_TRANSFER && cmdData.length === 0, CONFIG.STATUS.MALFORMED_CMD);
+        await this.assert(cmdId === this.COMMAND.CANCEL_TRANSFER && cmdData.length === 0, this.STATUS.MALFORMED_CMD);
+        await this.sendStatus(this.STATUS.SUCCESS);
 
         notify('Operation cancelled');
-
-        await this.sendStatus(CONFIG.STATUS.SUCCESS);
-
         throw new NxdtCancelError();
     }
 }
@@ -1133,7 +1150,7 @@ class NxdtClient {
 async function requestDirectory() {
     spinnerDialog.open('Requesting…', 'Destination directory');
     try {
-        directoryButton.directory = await window.showDirectoryPicker({ id: bytesDecode(CONFIG.ABI.MAGIC, CONFIG.ABI.TEXT), mode: 'readwrite', startIn: 'downloads' });
+        directoryButton.directory = await window.showDirectoryPicker({ id: MAGIC, mode: 'readwrite', startIn: 'downloads' });
     } catch (e) {
         logger.warn(e);
         return;
@@ -1165,7 +1182,7 @@ async function requestDirectory() {
         break;
     }
 
-    if (!globalThis.appClient) return;
+    if (!appRoot.client) return;
     await handleSession();
 }
 
@@ -1173,7 +1190,7 @@ async function requestDevice() {
     let device;
     spinnerDialog.open('Requesting…', 'Source device');
     try {
-        device = await navigator.usb.requestDevice({ filters: [{ vendorId: CONFIG.DEVICE.vendorId, productId: CONFIG.DEVICE.productId }] });
+        device = await navigator.usb.requestDevice({ filters: [{ vendorId: UsbBulk.VENDOR_ID, productId: UsbBulk.PRODUCT_ID }] });
     } catch (e) {
         logger.warn(e);
         return;
@@ -1231,7 +1248,7 @@ async function closeDevice() {
     setValueText(deviceButton, 'Not connected');
     await deviceButton.device.close();
     deviceButton.device = undefined;
-    globalThis.appClient = undefined;
+    appRoot.client = undefined;
 }
 
 async function openDevice(usbDev) {
@@ -1260,15 +1277,14 @@ async function openDevice(usbDev) {
         throw e;
     }
 
-    globalThis.appClient = new NxdtClient(() => ({
-        device: deviceButton.device,
+    appRoot.client = new NxdtClient14(deviceButton.device, () => ({
         directory: directoryButton.directory,
         verify: verifyButton.enabled
     }));
 
-    let cmdId, cmdData
+    let cmdId, cmdData;
     try {
-        [cmdId, cmdData] = await globalThis.appClient.getCmd();
+        [cmdId, cmdData] = await appRoot.client.getCmd();
     } catch (e) {
         notify('Application unresponsive');
         logger.warn(e);
@@ -1276,8 +1292,11 @@ async function openDevice(usbDev) {
         throw e;
     }
 
+    let abiMajor, abiMinor;
     try {
-        await globalThis.appClient.handleStartSessionCmd(cmdId, cmdData);
+        ({ abiMajor, abiMinor } = await appRoot.client.parseStartSessionHeader(cmdId, cmdData));
+        appRoot.client.assert(abiMajor == appRoot.client.VERSION.MAJOR && abiMinor == appRoot.client.VERSION.MINOR)
+        appRoot.client.sendStatus();
     } catch (e) {
         notify('Application incompatible');
         logger.warn(e);
@@ -1285,13 +1304,13 @@ async function openDevice(usbDev) {
         throw e;
     }
 
-    setValueText(deviceButton, `${deviceButton.device.device.productName} (${deviceButton.device.device.serialNumber})`);
+    setValueText(deviceButton, deviceButton.device.device.productName);
     notify('Device connected');
 }
 
 async function handleSession() {
     try {
-        await globalThis.appClient.handleSessionTransfer();
+        await appRoot.client.handleSessionTransfer();
     } catch (e) {
         notify('Communication error', true);
         logger.trace(e);
@@ -1304,7 +1323,7 @@ async function handleSession() {
 }
 
 function platformInfo() {
-    const version = `${CONFIG.VERSION.MAJOR}.${CONFIG.VERSION.MINOR}.${CONFIG.VERSION.MICRO}`;
+    const version = `${VERSION.MAJOR}.${VERSION.MINOR}.${VERSION.MICRO}`;
 
     logger.debug(`Platform: version=${version}, browser=${navigator.userAgent}`);
 
@@ -1319,7 +1338,7 @@ function browserSupport() {
     logger.debug(`Support: fsDirectory=${Boolean(dirSupported)}, webUSB=${Boolean(usbSupported)}`);
 
     if (!supported) {
-        document.getElementById('app').remove();
+        appRoot.remove();
 
         alertDialog.open(
             'Your configuration is not supported!',
@@ -1337,7 +1356,7 @@ function deviceSupport() {
 
     switch (platformInfo.dataset.platform) {
         case 'Linux':
-            setValueText(platformInfo, `SUBSYSTEM=='usb', ATTRS{idVendor}=='${hex(CONFIG.DEVICE.vendorId, 4)}', ATTRS{idProduct}=='${hex(CONFIG.DEVICE.productId, 4)}', TAG+='uaccess'`);
+            setValueText(platformInfo, `SUBSYSTEM=='usb', ATTRS{idVendor}=='${hex(UsbBulk.VENDOR_ID, 4)}', ATTRS{idProduct}=='${hex(UsbBulk.PRODUCT_ID, 4)}', TAG+='uaccess'`);
             break;
         case 'unknown':
             setValueText(platformInfo, platform);
@@ -1363,6 +1382,7 @@ const logger = new Logger();
 const alertDialog = new AlertDialog();
 const spinnerDialog = new SpinnerDialog();
 const progressDialog = new ProgressDialog();
+const appRoot = document.getElementById('app');
 const directoryButton = document.getElementById('directory');
 const deviceButton = document.getElementById('device');
 const verifyButton = document.getElementById('verify');

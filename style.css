@@ -6,6 +6,7 @@
 }
 
 :root {
+    --note-color: #959494;
     --text-color: #2d2d2d;
     --background-color: #f2f2f2;
     --separator-color: #ddd;
@@ -59,7 +60,7 @@ a {
 
 small {
     display: block;
-    color: #959494;
+    color: var(--note-color);
 }
 
 button {
@@ -145,6 +146,18 @@ main li > small {
 
 main button .value {
     color: var(--selector-color);
+    position: relative;
+}
+
+main button .value::after {
+    font-size: small;
+    white-space: nowrap;
+    color: var(--note-color);
+    content: attr(data-note);
+    position: absolute;
+    direction: rtl;
+    bottom: -1em;
+    width: 0;
 }
 
 footer {
@@ -200,7 +213,7 @@ dialog::backdrop {
 }
 
 #progress-label::after {
-    content: attr(data-after);
+    content: attr(data-note);
     position: absolute;
     direction: rtl;
     bottom: -1em;
