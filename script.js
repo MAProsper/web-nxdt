@@ -469,36 +469,34 @@ class UsbBulk {
         // Save endpoint max packet size
         this.packetSize = endpointIn.packetSize;
 
-        logger.debug(`Created: USB device (version=${this.device.usbVersionMajor}.${this.device.usbVersionMinor})`);
+        const version = `${this.device.usbVersionMajor}.${this.device.usbVersionMinor}`;
+        const name = `${this.device.manufacturerName} ${this.device.productName}`;
+        const serial = `${this.device.serialNumber}`;
+        logger.debug(`Created: USB device (version=${version}, name=${name}, serial=${serial})`);
     }
 
     async open() {
         logger.debug('Opening: USB device');
 
         await this.device.open();
-        await this.cancel();
+        await this.reset();
         await this.device.claimInterface(this.interface);
 
         logger.debug('Opened: USB device');
     }
 
-    async cancel() {
-        logger.debug('Cancelling: USB device');
+    async reset() {
+        logger.debug('Resetting: USB device');
 
         try { await this.device.reset() } catch (e) { logger.warn(e) }
 
-        logger.debug('Cancelled: USB device');
-    }
-
-    async reset() {
-        await this.close();
-        await this.open();
+        logger.debug('Reset: USB device');
     }
 
     async close() {
         logger.debug('Closing: USB device');
 
-        await this.cancel();
+        await this.reset();
         try { await this.device.releaseInterface(this.interface) } catch (e) { logger.warn(e) }
         try { await this.device.close() } catch (e) { logger.warn(e) }
 
@@ -514,7 +512,7 @@ class UsbBulk {
     }
 
     async readChunk(size, timeout = -1) {
-        assert(size > 0, 'USB.read (invalid size)');
+        // assert(size > 0, 'USB.read (invalid size)');
         let promise = this.device.transferIn(this.endpoint.in, size);
         if (timeout >= 0) promise = promiseTimeout(promise, timeout);
         let transfer;
@@ -522,7 +520,6 @@ class UsbBulk {
             transfer = await promise;
         } catch (e) {
             if (!(e instanceof TimeoutError)) throw e;
-            await this.cancel();
             transfer = {status: 'ok', data: new DataView(new ArrayBuffer(0))};
         }
         assert(transfer.status === 'ok', 'USB.read (error)');
@@ -544,7 +541,7 @@ class UsbBulk {
     }
 
     async writeChunk(chunk, timeout = -1) {
-        assert(chunk.length > 0, 'USB.write (invalid size)');
+        // assert(chunk.length > 0, 'USB.write (invalid size)');
         let promise = this.device.transferOut(this.endpoint.out, chunk);
         if (timeout >= 0) promise = promiseTimeout(promise, timeout);
         let transfer;
@@ -552,7 +549,6 @@ class UsbBulk {
             transfer = await promise;
         } catch (e) {
             if (!(e instanceof TimeoutError)) throw e;
-            await this.cancel();
             transfer = {status: 'ok', bytesWritten: 0};
         }
         assert(transfer.status === 'ok', 'USB.write (error)');
@@ -750,10 +746,10 @@ class NxdtClient {
         BULK_HEADER: new Struct('<I12x')
     };
 
-    constructor(getContext) {
+    constructor(device, getContext) {
+        this.device = device;
         this.getContext = getContext;
         this.fsCommit = new FsQueue();
-        this.device = this.context.device;
     }
 
     /* HELPERS */
@@ -1082,10 +1078,8 @@ class NxdtClient {
         const { abiMajor, abiMinor } = await this.parseStartSessionHeader(cmdId, cmdData);
         let success = true;
 
-        await this.assert(abiMajor === this.VERSION.MAJOR && abiMinor === this.VERSION.MINOR, this.STATUS.UNSUPPORTED_ABI_VERSION);
+        await this.assert(abiMajor >= this.VERSION.MAJOR && abiMinor >= this.VERSION.MINOR, this.STATUS.UNSUPPORTED_ABI_VERSION);
         await this.sendStatus(this.STATUS.SUCCESS);
-
-        success &&= await this.handleSessionTransfer()
 
         return success;
     }
@@ -1157,7 +1151,7 @@ class NxdtClient {
 class NxdtClientCompat1 extends NxdtClient {
     VERSION = {
         MAJOR: 1,
-        MINOR: 3
+        MINOR: 1
     };
 
     COMMAND = {
@@ -1206,24 +1200,24 @@ async function requestDirectory() {
     setValueText(directoryButton, directoryButton.directory.name);
     logger.info(`Setting: directory=${directoryButton.directory.name}`);
 
+    // First setup
     if (!deviceButton.disabled) return;
     deviceButton.disabled = false;
 
     navigator.usb.addEventListener('connect', async (event) => {
         if (deviceButton.device) return;
-        await openDevice(event.device);
+        await openDeviceClient(event.device);
         await handleSession();
     });
 
     const devices = await navigator.usb.getDevices();
     for (let device of devices) {
         try {
-            await openDevice(device);
+            await openDeviceClient(device);
         } catch (e) {
             logger.warn(e);
             continue;
         }
-
         break;
     }
 
@@ -1243,7 +1237,7 @@ async function requestDevice() {
         spinnerDialog.close();
     }
 
-    await openDevice(device);
+    await openDeviceClient(device);
     await handleSession();
 }
 
@@ -1289,20 +1283,15 @@ async function requestNotify() {
     }
 }
 
-async function closeDevice() {
+async function closeDeviceClient() {
     setValueText(deviceButton, 'Not connected');
-    await deviceButton.device.close();
+    if (deviceButton.device) await deviceButton.device.close();
     deviceButton.device = undefined;
+    appRoot.client = undefined;
+    return true;
 }
 
 async function openDevice(usbDev) {
-    notify('Connecting device');
-
-    if (deviceButton.device) {
-        logger.info('Changing device!');
-        await closeDevice();
-    }
-
     let device;
     try {
         device = new UsbBulk(usbDev);
@@ -1321,35 +1310,64 @@ async function openDevice(usbDev) {
         await device.close();
         throw e;
     }
+
     deviceButton.device = device;
+    return true;
+}
 
-    const client = new NxdtClient(getContext);
-
-    let cmdId, cmdData;
+async function openClient(client) {
+    let cmdHeader;
     try {
-        ({ cmdId, cmdData } = await client.getCmd());
+        cmdHeader = await client.getCmdHeader();
     } catch (e) {
         notify('Application unresponsive');
         logger.warn(e);
-        await closeDevice();
+        await closeDeviceClient();
         throw e;
     }
 
-    let abiMajor, abiMinor;
     try {
-        ({ abiMajor, abiMinor } = await client.parseStartSessionHeader(cmdId, cmdData));
-        client.assert(abiMajor == client.VERSION.MAJOR && abiMinor == client.VERSION.MINOR, client.STATUS.UNSUPPORTED_ABI_VERSION);
-        client.sendStatus(client.STATUS.SUCCESS);
+        const { cmdId, cmdData } = await client.getCmd(cmdHeader);
+        await client.handleStartSessionCmd(cmdId, cmdData);
     } catch (e) {
         notify('Application incompatible');
         logger.warn(e);
-        await closeDevice();
-        throw e;
+        return false;
     }
+
     appRoot.client = client;
+    return true;
+}
+
+async function openDeviceClient(usbDev) {
+    notify('Connecting device');
+
+    // Setup device
+    if (deviceButton.device) {
+        logger.info('Changing device!');
+        await closeDeviceClient();
+    }
+    await openDevice(usbDev);
+    const device = deviceButton.device;
+
+    // Setup client
+    let client;
+    const clients = [
+        new NxdtClient(device, getContext),
+        new NxdtClientCompat1(device, getContext),
+        new NxdtClientCompat0(device, getContext)
+    ];
+    for (client of clients) {
+        if (await openClient(client)) break;
+        await device.reset();
+    }
+    if (!appRoot.client) {
+        await closeDeviceClient();
+        throw new RangeError('No compatible client found');
+    }
 
     notify('Device connected');
-    setValueText(deviceButton, deviceButton.device.device.productName);
+    setValueText(deviceButton, device.device.productName);
 }
 
 async function handleSession() {
@@ -1360,8 +1378,7 @@ async function handleSession() {
         logger.trace(e);
         throw e;
     } finally {
-        await closeDevice(deviceButton.device);
-        appRoot.client = undefined;
+        await closeDeviceClient();
     }
 
     notify('Device disconnected');
@@ -1369,43 +1386,41 @@ async function handleSession() {
 
 function getContext() {
     return {
-        device: deviceButton.device,
         directory: directoryButton.directory,
         verify: verifyButton.enabled
     }
 }
 
-function platformInfo() {
+function appInfo() {
     const version = `${VERSION.MAJOR}.${VERSION.MINOR}.${VERSION.MICRO}`;
-
-    logger.debug(`Platform: version=${version}, browser=${navigator.userAgent}`);
-
+    logger.debug(`Application: version=${version}`);
     setValueText(debugButton, version);
 }
 
 function browserSupport() {
-    const dirSupported = window?.showDirectoryPicker;
-    const usbSupported = navigator?.usb;
+    const dirSupported = Boolean(window?.showDirectoryPicker);
+    const usbSupported = Boolean(navigator?.usb);
     const supported = dirSupported && usbSupported;
 
-    logger.debug(`Support: fsDirectory=${Boolean(dirSupported)}, webUSB=${Boolean(usbSupported)}`);
+    logger.debug(`Browser: fsDirectory=${dirSupported}, webUSB=${usbSupported}, browser=${navigator.userAgent}`);
 
     if (!supported) {
         appRoot.remove();
-
         alertDialog.open(
             'Your configuration is not supported!',
             'Try a chromium-based browser on a desktop device.'
         );
     }
 
-    assert(supported, 'Unsupported browser!')
+    assert(supported, 'Unsupported browser!');
 }
 
 function deviceSupport() {
     const deviceInfo = document.getElementById('device-info');
     const platform = navigator?.userAgentData?.platform || 'Unknown';
     const platformInfo = deviceInfo.querySelector(`[data-platform=${platform}]`) || deviceInfo.querySelector('[data-platform=unknown]');
+
+    logger.debug(`Device: platform=${platform}`);
 
     switch (platformInfo.dataset.platform) {
         case 'Linux':
@@ -1442,7 +1457,7 @@ const verifyButton = document.getElementById('verify');
 const debugButton = document.getElementById('debug');
 const notifyButton = document.getElementById('notify');
 
-platformInfo();
+appInfo();
 browserSupport();
 deviceSupport();
 
@@ -1452,5 +1467,5 @@ verifyButton.addEventListener('click', toggleVerify);
 debugButton.addEventListener('click', generateDebug);
 notifyButton.addEventListener('click', requestNotify);
 
-syncWorker();
 syncNotify();
+syncWorker();
