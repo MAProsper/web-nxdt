@@ -425,8 +425,8 @@ function promiseTimeout(promise, timeout) {
 }
 
 async function makeFile(dir, filePath) {
-    logger.debug(`fs: creating file (dir=${dir}, filePath=${filePath})`);
-    const dirs = filePath.split('/').filter(name => name);
+    logger.debug(`fs: creating file (dir=${dir.name}, filePath=${filePath})`);
+    const dirs = strStrip(filePath, '/').split('/');
     const name = dirs.pop();
 
     // Create full directory tree and file
