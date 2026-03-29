@@ -917,10 +917,14 @@ class NxdtClient {
 
         // File entries
         let offset = 0;
-        while (true) {
+        loop: while (true) {
             ({ cmdId, cmdData } = await this.getCmd());
-            if (cmdId === this.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
-            if (cmdId === this.COMMAND.HEADER_TRANSFER) break;
+            switch (cmdId) {
+                case this.COMMAND.CANCEL_TRANSFER:
+                    await this.handleCancelCmd(cmdId, cmdData);
+                case this.COMMAND.HEADER_TRANSFER:
+                    break loop;
+            }
 
             const { filePath, fileSize, headerSize } = await this.parseFileHeader(cmdId, cmdData);
             await this.assert(!headerSize, this.STATUS.MALFORMED_CMD);
@@ -981,10 +985,14 @@ class NxdtClient {
 
         // Transfer FS
         let offset = 0;
-        while (true) {
+        loop: while (true) {
             ({ cmdId, cmdData } = await this.getCmd());
-            if (cmdId === this.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
-            if (cmdId === this.COMMAND.END_TRANSFER) break;
+            switch (cmdId) {
+                case this.COMMAND.CANCEL_TRANSFE:
+                    await this.handleCancelCmd(cmdId, cmdData);
+                case this.COMMAND.END_TRANSFER:
+                    break loop;
+            }
 
             const { filePath, fileSize, headerSize } = await this.parseFileHeader(cmdId, cmdData);
             await this.assert(!headerSize, this.STATUS.MALFORMED_CMD);
@@ -1044,10 +1052,14 @@ class NxdtClient {
 
         // Transfer Bulk
         let count = 0;
-        while (true) {
+        loop: while (true) {
             ({ cmdId, cmdData } = await this.getCmd());
-            if (cmdId === this.COMMAND.CANCEL_TRANSFER) await this.handleCancelCmd(cmdId, cmdData);
-            if (cmdId === this.COMMAND.END_TRANSFER) break;
+            switch (cmdId) {
+                case this.COMMAND.CANCEL_TRANSFER:
+                    await this.handleCancelCmd(cmdId, cmdData);
+                case this.COMMAND.END_TRANSFER:
+                    break loop;
+            }
 
             const { filePath, fileSize, headerSize } = await this.parseFileHeader(cmdId, cmdData);
             await this.assert(headerSize, this.STATUS.MALFORMED_CMD);
