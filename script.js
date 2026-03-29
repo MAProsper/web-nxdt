@@ -860,7 +860,7 @@ class NxdtClient {
             progressDialog.close();
         }
 
-        notify(success ? 'Transfer successful' : 'Transfer failed', true);
+        notify(success ? 'Transfer succeeded' : 'Transfer failed', true);
         return success;
     }
 
@@ -973,7 +973,7 @@ class NxdtClient {
             progressDialog.close();
         }
 
-        notify(success ? 'Transfer successful' : 'Transfer failed', true);
+        notify(success ? 'Transfer succeeded' : 'Transfer failed', true);
         return success;
     }
 
@@ -1042,7 +1042,7 @@ class NxdtClient {
             progressDialog.close();
         }
 
-        notify(success ? 'Transfer successful' : 'Transfer failed', true);
+        notify(success ? 'Transfer succeeded' : 'Transfer failed', true);
         return success;
     }
 
