@@ -384,7 +384,7 @@ function setValueText(e, value) {
 
 function notify(message, important = false) {
     const TIMEOUT = 3000;
-    logger.info(`notify: ${message}`);
+    logger.info(`notify: open (message=${message})`);
     if (important) new Notification(document.title, { body: message });
 
     // Setup toast
@@ -405,6 +405,7 @@ function notify(message, important = false) {
     toast.togglePopover(true);
     clearTimeout(toast.timeout);
     toast.timeout = setTimeout(() => {
+        logger.info('notify: close');
         dialogs.forEach(e => e.removeEventListener('toggle', toast.forcePopover));
         toast.togglePopover(false);
         delete toast.timeout;
@@ -472,7 +473,7 @@ class UsbBulk {
         const version = `${this.device.usbVersionMajor}.${this.device.usbVersionMinor}`;
         const name = `${this.device.manufacturerName} ${this.device.productName}`;
         const serial = `${this.device.serialNumber}`;
-        logger.debug(`usb: created (version=${version}, name=${name}, serial=${serial})`);
+        logger.debug(`usb: created (version=${version}, serial=${serial}, name=${name})`);
     }
 
     async open() {
@@ -844,7 +845,6 @@ class NxdtClient {
                 success &&= await this.handleFileTransfer(file, fileSize);
             }
             this.fsCommit(file.close());
-            await this.sendStatus(this.STATUS.SUCCESS);
         } finally {
             progressDialog.close();
         }
@@ -862,7 +862,7 @@ class NxdtClient {
         logger.debug(`client: parsed file header (fileSize=${fileSize}, filePathLength=${filePathLength}, headerSize=${headerSize}, filePath=${filePath})`);
 
         await this.assert(fileSize <= Number.MAX_SAFE_INTEGER, this.STATUS.HOST_IO_ERROR);
-        await this.assert(headerSize < fileSize, this.STATUS.MALFORMED_CMD);
+        await this.assert(headerSize <= fileSize, this.STATUS.MALFORMED_CMD);
 
         return { filePath, fileSize, headerSize };
     }
@@ -894,13 +894,15 @@ class NxdtClient {
             offset += chunk.length;
         }
         await this.device.readEnd(this.USB.TIMEOUT);
+
         success &&= offset === size;
+        if (size) await this.sendStatus(this.STATUS.SUCCESS);
 
         // Handle checksum
         if (!hash) return success;
         const digest = hasher.hexdigest();
         const verified = digest.includes(hash);
-        logger.debug(`client: checksum=${digest}, verified=${verified}`);
+        logger.debug(`client: file transfer info (checksum=${digest}, verified=${verified})`);
         success &&= verified;
         return success;
     }
@@ -925,7 +927,6 @@ class NxdtClient {
             await this.sendStatus(this.STATUS.SUCCESS);
 
             success &&= await this.handleFileTransfer(file, fileSize, this.getChecksum(filePath));
-            await this.sendStatus(this.STATUS.SUCCESS);
             offset += fileSize;
         }
 
@@ -938,6 +939,7 @@ class NxdtClient {
         offset += cmdData.length;
 
         success &&= offset === (headerSize + dataSize);
+        await this.sendStatus(this.STATUS.SUCCESS);
 
         return success;
     }
@@ -991,7 +993,6 @@ class NxdtClient {
                 await this.sendStatus(this.STATUS.SUCCESS);
 
                 success &&= await this.handleFileTransfer(file, fileSize);
-                await this.sendStatus(this.STATUS.SUCCESS);
                 offset += fileSize;
             } finally {
                 this.fsCommit(file.close());
