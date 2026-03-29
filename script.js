@@ -876,7 +876,6 @@ class NxdtClient {
         while (offset < size) {
             const chunkSize = Math.min(this.USB.BULK_SIZE, size - offset);
             const chunk = await this.device.readChunk(chunkSize, this.USB.TIMEOUT);
-            if (chunk.length === 0) await this.handleCancelCmd(this.COMMAND.CANCEL_TRANSFER, chunk);
 
             // Check if we're dealing with a command
             if (chunk.length === this.STRUCT.COMMAND_HEADER.size) {
@@ -886,6 +885,8 @@ class NxdtClient {
                     await this.handleCancelCmd(cmdId, cmdData);
                 }
             }
+
+            await this.assert(chunk.length === chunkSize, this.STATUS.HOST_IO_ERROR);
 
             // Write current chunk.
             await file.write(chunk);
@@ -901,7 +902,7 @@ class NxdtClient {
         // Handle checksum
         if (!hash) return success;
         const digest = hasher.hexdigest();
-        const verified = digest.includes(hash);
+        const verified = digest.startsWith(hash);
         logger.debug(`client: file transfer info (checksum=${digest}, verified=${verified})`);
         success &&= verified;
         return success;
