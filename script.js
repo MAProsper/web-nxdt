@@ -1007,7 +1007,7 @@ class NxdtClient {
             }
 
             const { filePath, fileSize, headerSize } = await this.parseFileHeader(cmdId, cmdData);
-            await this.assert(!headerSize, this.STATUS.MALFORMED_CMD);
+            await this.assert(headerSize === 0, this.STATUS.MALFORMED_CMD);
             const file = await this.makeFile(dir, filePath);
             try {
                 await this.sendStatus(this.STATUS.SUCCESS);
@@ -1074,7 +1074,7 @@ class NxdtClient {
             }
 
             const { filePath, fileSize, headerSize } = await this.parseFileHeader(cmdId, cmdData);
-            await this.assert(headerSize, this.STATUS.MALFORMED_CMD);
+            await this.assert(headerSize > 0, this.STATUS.MALFORMED_CMD);
             const file = await this.makeFile(dir, filePath);
             try {
                 await this.sendStatus(this.STATUS.SUCCESS);
