@@ -366,11 +366,16 @@ class Logger {
 
 // === NXDT ===
 const MAGIC = 'NXDT';
+
 const VERSION = {
     MAJOR: 2,
     MINOR: 5,
     MICRO: 0
 };
+
+class TimeoutError extends Error {}
+
+class NxdtCancelError extends Error {}
 
 function assert(value, message) {
     if (value) return;
@@ -412,10 +417,6 @@ function notify(message, important = false) {
     }, TIMEOUT);
 }
 
-class TimeoutError extends Error {}
-
-class NxdtCancelError extends Error {}
-
 function promiseTimeout(promise, timeout) {
     return new Promise((resolve, reject) => {
         const id = setTimeout(() => reject(new TimeoutError('Promise timeout')), timeout);
@@ -424,144 +425,16 @@ function promiseTimeout(promise, timeout) {
 }
 
 async function makeFile(dir, filePath) {
+    logger.debug(`fs: creating file (dir=${dir}, filePath=${filePath})`);
     const dirs = filePath.split('/').filter(name => name);
     const name = dirs.pop();
 
     // Create full directory tree and file
     for (let dirname of dirs) dir = await dir.getDirectoryHandle(dirname, { create: true });
     const file = await dir.getFileHandle(name, { create: true });
-    return await file.createWritable({ mode: 'siloed' });
-}
-
-class UsbBulk {
-    static VENDOR_ID = 0x057E;
-    static PRODUCT_ID = 0x3000;
-    static MANUFACTURER_NAME = 'DarkMatterCore';
-    static PRODUCT_NAME = 'nxdumptool';
-
-    constructor(device) {
-        logger.debug('usb: creating');
-        this.device = device;
-
-        assert(this.device.vendorId === UsbBulk.VENDOR_ID && this.device.productId === UsbBulk.PRODUCT_ID, 'Invalid vendor/product IDs!')
-
-        // Check if the product and manufacturer strings match the ones used by nxdumptool.
-        // TODO: enable product string check whenever we're ready for a release.
-        // this.device.productName === UsbBulk.productName
-        assert(this.device.manufacturerName === UsbBulk.MANUFACTURER_NAME, 'Invalid manufacturer/product strings!');
-
-        // Get default configuration descriptor.
-        const configuration = this.device.configuration;
-
-        // Get default interface descriptor.
-        this.interface = configuration.interfaces[0];
-
-        // Retrieve endpoints.
-        const endpointIn = this.interface.alternate.endpoints.find(e => e.direction === 'in');
-        const endpointOut = this.interface.alternate.endpoints.find(e => e.direction === 'out');
-
-        assert(endpointIn && endpointOut, 'No endpoint addresses!');
-
-        this.endpoint = {
-            in: endpointIn.endpointNumber,
-            out: endpointOut.endpointNumber,
-        }
-
-        // Save endpoint max packet size
-        this.packetSize = endpointIn.packetSize;
-
-        const version = `${this.device.usbVersionMajor}.${this.device.usbVersionMinor}`;
-        const name = `${this.device.manufacturerName} ${this.device.productName}`;
-        const serial = `${this.device.serialNumber}`;
-        logger.debug(`usb: created (version=${version}, serial=${serial}, name=${name})`);
-    }
-
-    async open() {
-        logger.debug('usb: opening');
-        await this.device.open();
-        await this.reset();
-        await this.device.claimInterface(this.interface);
-        logger.debug('usb: opened');
-    }
-
-    async reset() {
-        logger.debug('usb: resting');
-        try { await this.device.reset() } catch (e) { logger.warn(e) }
-        logger.debug('usb: reset');
-    }
-
-    async close() {
-        logger.debug('usb: closing');
-        await this.reset();
-        try { await this.device.releaseInterface(this.interface) } catch (e) { logger.warn(e) }
-        try { await this.device.close() } catch (e) { logger.warn(e) }
-        logger.debug('usb: closed');
-    }
-
-    isAlignedToPacket(size) {
-        return (size & (this.packetSize - 1)) === 0;
-    }
-
-    isTransferActive(got, expect) {
-        return got > 0 && got === expect && this.isAlignedToPacket(got);
-    }
-
-    async readChunk(size, timeout = -1) {
-        // assert(size > 0, 'USB.read (invalid size)');
-        let promise = this.device.transferIn(this.endpoint.in, size);
-        if (timeout >= 0) promise = promiseTimeout(promise, timeout);
-        let transfer;
-        try {
-            transfer = await promise;
-        } catch (e) {
-            if (!(e instanceof TimeoutError)) throw e;
-            transfer = {status: 'ok', data: new DataView(new ArrayBuffer(0))};
-        }
-        assert(transfer.status === 'ok', 'USBDevice.read (error)');
-        const chunk = new Uint8Array(transfer.data.buffer);
-        this.readActive = this.isTransferActive(chunk.length, size);
-        return chunk;
-    }
-
-    async readEnd(timeout = -1) {
-        if (!this.readActive) return;
-        const chunk = await this.readChunk(1, timeout);
-        assert(chunk.length === 0, 'UsbBulk.readEnd (received more than expected)');
-    }
-
-    async read(size, timeout = -1) {
-        const chunk = await this.readChunk(size, timeout);
-        await this.readEnd(timeout);
-        return chunk;
-    }
-
-    async writeChunk(chunk, timeout = -1) {
-        // assert(chunk.length > 0, 'USB.write (invalid size)');
-        let promise = this.device.transferOut(this.endpoint.out, chunk);
-        if (timeout >= 0) promise = promiseTimeout(promise, timeout);
-        let transfer;
-        try {
-            transfer = await promise;
-        } catch (e) {
-            if (!(e instanceof TimeoutError)) throw e;
-            transfer = {status: 'ok', bytesWritten: 0};
-        }
-        assert(transfer.status === 'ok', 'USBDevice.write (error)');
-        this.writeActive = this.isTransferActive(transfer.bytesWritten, chunk.length);
-        return transfer.bytesWritten;
-    }
-
-    async writeEnd(timeout = -1) {
-        if (!this.writeActive) return;
-        const wr = await this.writeChunk(new Uint8Array(0), timeout);
-        assert(wr === 0, 'UsbBulk.writeEnd (wrote more than expected)');
-    }
-
-    async write(chunk, timeout = -1) {
-        const wr = await this.writeChunk(chunk, timeout);
-        await this.writeEnd(timeout);
-        return wr;
-    }
+    const writer = await file.createWritable({ mode: 'siloed' });
+    logger.debug('fs: created file');
+    return writer;
 }
 
 class Dialog {
@@ -701,6 +574,137 @@ class FsQueue {
             this.queue.delete(promise);
             if (!this.queue.size) this.close();
         });
+    }
+}
+
+class UsbBulk {
+    static VENDOR_ID = 0x057E;
+    static PRODUCT_ID = 0x3000;
+    static MANUFACTURER_NAME = 'DarkMatterCore';
+    static PRODUCT_NAME = 'nxdumptool';
+
+    constructor(device) {
+        logger.debug('usb: creating');
+        this.device = device;
+
+        assert(this.device.vendorId === UsbBulk.VENDOR_ID && this.device.productId === UsbBulk.PRODUCT_ID, 'Invalid vendor/product IDs!')
+
+        // Check if the product and manufacturer strings match the ones used by nxdumptool.
+        // TODO: enable product string check whenever we're ready for a release.
+        // this.device.productName === UsbBulk.productName
+        assert(this.device.manufacturerName === UsbBulk.MANUFACTURER_NAME, 'Invalid manufacturer/product strings!');
+
+        // Get default configuration descriptor.
+        const configuration = this.device.configuration;
+
+        // Get default interface descriptor.
+        this.interface = configuration.interfaces[0];
+
+        // Retrieve endpoints.
+        const inEndpoint = this.interface.alternate.endpoints.find(e => e.direction === 'in');
+        const outEndpoint = this.interface.alternate.endpoints.find(e => e.direction === 'out');
+
+        assert(inEndpoint && outEndpoint, 'No endpoint addresses!');
+
+        this.endpoint = {
+            in: inEndpoint.endpointNumber,
+            out: outEndpoint.endpointNumber,
+        }
+
+        // Save endpoint max packet size
+        this.packetSize = inEndpoint.packetSize;
+
+        const version = `${this.device.usbVersionMajor}.${this.device.usbVersionMinor}`;
+        const name = `${this.device.manufacturerName} ${this.device.productName}`;
+        const serial = `${this.device.serialNumber}`;
+        logger.debug(`usb: created (version=${version}, serial=${serial}, name=${name})`);
+    }
+
+    async open() {
+        logger.debug('usb: opening');
+        await this.device.open();
+        await this.reset();
+        await this.device.claimInterface(this.interface);
+        logger.debug('usb: opened');
+    }
+
+    async reset() {
+        logger.debug('usb: resting');
+        try { await this.device.reset() } catch (e) { logger.warn(e) }
+        logger.debug('usb: reset');
+    }
+
+    async close() {
+        logger.debug('usb: closing');
+        await this.reset();
+        try { await this.device.releaseInterface(this.interface) } catch (e) { logger.warn(e) }
+        try { await this.device.close() } catch (e) { logger.warn(e) }
+        logger.debug('usb: closed');
+    }
+
+    isAlignedToPacket(size) {
+        return (size & (this.packetSize - 1)) === 0;
+    }
+
+    isTransferActive(got, expect) {
+        return got > 0 && got === expect && this.isAlignedToPacket(got);
+    }
+
+    async readChunk(size, timeout = -1) {
+        // assert(size > 0, 'USB.read (invalid size)');
+        let promise = this.device.transferIn(this.endpoint.in, size);
+        if (timeout >= 0) promise = promiseTimeout(promise, timeout);
+        let transfer;
+        try {
+            transfer = await promise;
+        } catch (e) {
+            if (!(e instanceof TimeoutError)) throw e;
+            transfer = {status: 'ok', data: new DataView(new ArrayBuffer(0))};
+        }
+        assert(transfer.status === 'ok', 'USBDevice.read (error)');
+        const chunk = new Uint8Array(transfer.data.buffer);
+        this.readActive = this.isTransferActive(chunk.length, size);
+        return chunk;
+    }
+
+    async readEnd(timeout = -1) {
+        if (!this.readActive) return;
+        const chunk = await this.readChunk(1, timeout);
+        assert(chunk.length === 0, 'UsbBulk.readEnd (received more than expected)');
+    }
+
+    async read(size, timeout = -1) {
+        const chunk = await this.readChunk(size, timeout);
+        await this.readEnd(timeout);
+        return chunk;
+    }
+
+    async writeChunk(chunk, timeout = -1) {
+        // assert(chunk.length > 0, 'USB.write (invalid size)');
+        let promise = this.device.transferOut(this.endpoint.out, chunk);
+        if (timeout >= 0) promise = promiseTimeout(promise, timeout);
+        let transfer;
+        try {
+            transfer = await promise;
+        } catch (e) {
+            if (!(e instanceof TimeoutError)) throw e;
+            transfer = {status: 'ok', bytesWritten: 0};
+        }
+        assert(transfer.status === 'ok', 'USBDevice.write (error)');
+        this.writeActive = this.isTransferActive(transfer.bytesWritten, chunk.length);
+        return transfer.bytesWritten;
+    }
+
+    async writeEnd(timeout = -1) {
+        if (!this.writeActive) return;
+        const wr = await this.writeChunk(new Uint8Array(0), timeout);
+        assert(wr === 0, 'UsbBulk.writeEnd (wrote more than expected)');
+    }
+
+    async write(chunk, timeout = -1) {
+        const wr = await this.writeChunk(chunk, timeout);
+        await this.writeEnd(timeout);
+        return wr;
     }
 }
 
@@ -851,8 +855,8 @@ class NxdtClient {
             } else {
                 success &&= await this.handleFileTransfer(file, fileSize);
             }
-            this.fsCommit(file.close());
         } finally {
+            this.fsCommit(file.close());
             progressDialog.close();
         }
 
@@ -1072,12 +1076,15 @@ class NxdtClient {
             const { filePath, fileSize, headerSize } = await this.parseFileHeader(cmdId, cmdData);
             await this.assert(headerSize, this.STATUS.MALFORMED_CMD);
             const file = await this.makeFile(dir, filePath);
-            await this.sendStatus(this.STATUS.SUCCESS);
+            try {
+                await this.sendStatus(this.STATUS.SUCCESS);
 
-            progressDialog.open('Transferring…', filePath, fileSize, `${count + 1}/${bulkCount}`);
-            success &&= await this.handleArchiveTransfer(file, headerSize, fileSize - headerSize);
-            this.fsCommit(file.close());
-            await this.sendStatus(this.STATUS.SUCCESS);
+                progressDialog.open('Transferring…', filePath, fileSize, `${count + 1}/${bulkCount}`);
+                success &&= await this.handleArchiveTransfer(file, headerSize, fileSize - headerSize);
+                await this.sendStatus(this.STATUS.SUCCESS);
+            } finally {
+                this.fsCommit(file.close());
+            }
             count++;
         }
 
