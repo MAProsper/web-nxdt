@@ -368,7 +368,7 @@ class Logger {
 const MAGIC = 'NXDT';
 const VERSION = {
     MAJOR: 2,
-    MINOR: 3,
+    MINOR: 5,
     MICRO: 0
 };
 
