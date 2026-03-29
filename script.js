@@ -616,13 +616,20 @@ class ProgressDialog extends Dialog {
         this.update(0);
         this.updateEta();
         super.open(title, text);
+
         clearInterval(this.intervalEta);
         this.intervalEta = setInterval(() => this.updateEta(), this.TIME_UPDATE);
+        navigator.wakeLock.request().then(
+            sentinel => this.wakeLock = sentinel,
+            e => logger.warn(e)
+        );
     }
 
     close() {
+        if (this.wakeLock) this.wakeLock.release();
         clearInterval(this.intervalEta);
         delete this.intervalEta;
+        delete this.wakeLock;
         super.close();
     }
 
