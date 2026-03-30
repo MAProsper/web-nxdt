@@ -780,11 +780,16 @@ class NxdtClient {
 
     async makeFile(dir, filePath) {
         try {
-            return await makeFile(dir, filePath);
+            return await makeFile(dir, this.adaptPath(filePath));
         } catch (e) {
             await this.sendStatus(this.STATUS.HOST_IO_ERROR);
             throw e;
         }
+    }
+
+    adaptPath(path) {
+        if (!this.context.simple) return;
+        return path.replaceAll(/^[^[]*\/|(?<!].*\/.*) ((\d+\.\d+\.\d+ )?(\[v?\d+])+(\[BASE])?|\(\d+\))/, '');
     }
 
     getChecksum(path) {
@@ -1270,6 +1275,12 @@ async function requestDevice() {
     await handleSession();
 }
 
+function toggleSimple() {
+    simpleButton.enabled = !simpleButton.enabled;
+    logger.info(`app: setting changed (simple=${simpleButton.enabled})`);
+    setValueText(simpleButton, simpleButton.enabled ? 'Enabled' : 'Disabled');
+}
+
 function toggleVerify() {
     verifyButton.enabled = !verifyButton.enabled;
     logger.info(`app: setting changed (verify=${verifyButton.enabled})`);
@@ -1413,6 +1424,7 @@ async function handleSession() {
 function getContext() {
     return {
         directory: directoryButton.directory,
+        simple: simpleButton.enabled,
         verify: verifyButton.enabled
     }
 }
@@ -1479,6 +1491,7 @@ const progressDialog = new ProgressDialog();
 const appRoot = document.getElementById('app');
 const directoryButton = document.getElementById('directory');
 const deviceButton = document.getElementById('device');
+const simpleButton = document.getElementById('simple');
 const verifyButton = document.getElementById('verify');
 const debugButton = document.getElementById('debug');
 const notifyButton = document.getElementById('notify');
@@ -1489,6 +1502,7 @@ deviceSupport();
 
 directoryButton.addEventListener('click', requestDirectory);
 deviceButton.addEventListener('click', requestDevice);
+simpleButton.addEventListener('click', toggleSimple);
 verifyButton.addEventListener('click', toggleVerify);
 debugButton.addEventListener('click', generateDebug);
 notifyButton.addEventListener('click', requestNotify);

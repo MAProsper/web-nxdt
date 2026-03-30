@@ -161,10 +161,11 @@ main button .value::after {
 }
 
 footer {
-    border-top: solid 1px var(--text-color);
-    padding: 0.8rem 2.5rem;
     display: flex;
+    text-align: center;
+    border-top: solid 1px var(--text-color);
     justify-content: flex-end;
+    padding: 0.8rem 2.5rem;
     gap: 2rem;
 }
 
