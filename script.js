@@ -444,6 +444,10 @@ class Dialog {
         this.text = this.dialog.querySelector('small');
     }
 
+    get opened() {
+        return this.dialog.matches(':open');
+    }
+
     open(title, text) {
         logger.info(`dialog: open (title=${title} text=${text})`);
         this.title.innerText = title;
@@ -452,7 +456,7 @@ class Dialog {
     }
 
     close() {
-        if (!this.dialog.matches(':open')) return;
+        if (!this.opened) return;
         logger.info(`dialog: close`);
         this.dialog.close();
     }
@@ -493,17 +497,18 @@ class ProgressDialog extends Dialog {
         clearInterval(this.intervalEta);
         this.intervalEta = setInterval(() => this.updateEta(), this.TIME_UPDATE);
         navigator.wakeLock.request().then(
-            sentinel => this.wakeLock = sentinel,
+            sentinel => this.opened ? (this.wakeLock = sentinel) : sentinel.release(),
             e => logger.warn(e)
         );
     }
 
     close() {
+        if (!this.opened) return;
+        super.close();
         if (this.wakeLock) this.wakeLock.release();
         clearInterval(this.intervalEta);
         delete this.intervalEta;
         delete this.wakeLock;
-        super.close();
     }
 
     #formatTime(sec) {
@@ -907,8 +912,8 @@ class NxdtClient {
         }
         await this.device.readEnd(this.USB.TIMEOUT);
 
+        if (size > 0) await this.sendStatus(this.STATUS.SUCCESS);
         success &&= offset === size;
-        if (size) await this.sendStatus(this.STATUS.SUCCESS);
 
         // Handle checksum
         if (!hash) return success;
