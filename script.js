@@ -788,7 +788,7 @@ class NxdtClient {
     }
 
     adaptPath(path) {
-        if (!this.context.simple) return;
+        if (!this.context.simple) return path;
         return path.replaceAll(/^[^[]*\/|(?<!].*\/.*) ((\d+\.\d+\.\d+ )?(\[v?\d+])+(\[BASE])?|\(\d+\))/, '');
     }
 
