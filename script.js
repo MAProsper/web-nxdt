@@ -780,7 +780,7 @@ class NxdtClient {
 
     async makeFile(dir, filePath) {
         try {
-            return await makeFile(dir, this.adaptPath(filePath));
+            return await makeFile(dir, filePath);
         } catch (e) {
             await this.sendStatus(this.STATUS.HOST_IO_ERROR);
             throw e;
@@ -789,7 +789,7 @@ class NxdtClient {
 
     adaptPath(path) {
         if (!this.context.simple) return path;
-        return path.replaceAll(/^[^[]*\/|(?<!].*\/.*) ((\d+\.\d+\.\d+ )?(\[v?\d+])+(\[BASE])?|\(\d+\))/, '');
+        return path.replaceAll(/^[^[]*\/|(?<!].*\/.*)((\d+\.\d+\.\d+ )?(\[v?\d+])+|\(\d+\))/g, '');
     }
 
     getChecksum(path) {
@@ -855,11 +855,11 @@ class NxdtClient {
         let success = true;
 
         const dir = this.context.directory;
-        const file = await this.makeFile(dir, filePath);
+        const file = await this.makeFile(dir, this.adaptPath(filePath));
         try {
             await this.sendStatus(this.STATUS.SUCCESS);
 
-            progressDialog.open('Transferring…', filePath, fileSize);
+            progressDialog.open('Transferring…', this.adaptPath(filePath), fileSize);
             if (headerSize) {
                 success &&= await this.handleArchiveTransfer(file, headerSize, fileSize - headerSize);
             } else {
@@ -976,7 +976,7 @@ class NxdtClient {
         await this.sendStatus(this.STATUS.SUCCESS);
         let success = true;
 
-        progressDialog.open('Transferring…', fsPath, fsSize);
+        progressDialog.open('Transferring…', this.adaptPath(fsPath), fsSize);
         try {
             success &&= await this.handleFsTransfer(fsSize);
         } finally {
@@ -1018,7 +1018,7 @@ class NxdtClient {
 
             const { filePath, fileSize, headerSize } = await this.parseFileHeader(cmdId, cmdData);
             await this.assert(headerSize === 0, this.STATUS.MALFORMED_CMD);
-            const file = await this.makeFile(dir, filePath);
+            const file = await this.makeFile(dir, this.adaptPath(filePath));
             try {
                 await this.sendStatus(this.STATUS.SUCCESS);
 
