@@ -1010,7 +1010,7 @@ class NxdtClient {
         loop: while (true) {
             ({ cmdId, cmdData } = await this.getCmd());
             switch (cmdId) {
-                case this.COMMAND.CANCEL_TRANSFE:
+                case this.COMMAND.CANCEL_TRANSFER:
                     await this.handleCancelCmd(cmdId, cmdData);
                 case this.COMMAND.END_TRANSFER:
                     break loop;
