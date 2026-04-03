@@ -31,5 +31,3 @@ jobs:
             windows/Web-NXDT.exe
             macos/Web-NXDT.app.zip
             linux/Web-NXDT.AppImage
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
