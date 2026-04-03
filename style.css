@@ -113,6 +113,12 @@ progress::-webkit-progress-value {
 }
 
 /* Page rules */
+#app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
 header {
     margin: 0;
     border-bottom: solid 1px var(--text-color);
@@ -121,43 +127,36 @@ header {
     font-size: 1.8rem;
 }
 
-main ul {
-    font-size: 1.3rem;
-    margin: 2.5rem 30rem;
-    list-style-type: none;
-    margin-inline: auto;
-    padding-inline: 5rem;
-}
+main {
+    flex-grow: 1;
 
-main li {
-    border-top: solid;
-    border-color: var(--separator-color);
-    border-width: 1px;
-}
+    ul {
+        font-size: 1.3rem;
+        margin: 2.5rem 30rem;
+        list-style-type: none;
+        margin-inline: auto;
+        padding-inline: 5rem;
+    }
 
-main li > * {
-    padding: 1rem;
-    width: 100%;
-}
+    li {
+        border-top: solid;
+        border-color: var(--separator-color);
+        border-width: 1px;
 
-main li > small {
-    padding-top: 0.5rem;
-}
+        & > * {
+            padding: 1rem;
+            width: 100%;
+        }
 
-main button .value {
-    color: var(--selector-color);
-    position: relative;
-}
+        & > small {
+            padding-top: 0.5rem;
+        }
+    }
 
-main button .value::after {
-    font-size: small;
-    white-space: nowrap;
-    color: var(--note-color);
-    content: attr(data-note);
-    position: absolute;
-    direction: rtl;
-    bottom: -1em;
-    width: 0;
+    button .value {
+        color: var(--selector-color);
+        position: relative;
+    }
 }
 
 footer {
@@ -167,19 +166,10 @@ footer {
     justify-content: flex-end;
     padding: 0.8rem 2.5rem;
     gap: 2rem;
-}
 
-#notify {
-    margin-right: auto;
-}
-
-[popover] {
-    margin: 0;
-    padding: 1rem;
-    color: white;
-    border: none;
-    background-color: rgba(20, 20, 20, 0.75);
-    box-shadow: 0em 0em 1em 0em rgba(128, 128, 128, 0.1);
+    #notify {
+        margin-right: auto;
+    }
 }
 
 dialog {
@@ -192,34 +182,45 @@ dialog {
     max-width: 35rem;
     text-align: center;
     color: inherit;
+
+    & > *:first-child {
+        margin-top: var(--dialog-margin);
+    }
+
+    & > *:last-child {
+        margin-bottom: var(--dialog-margin);
+    }
+
+    &::backdrop {
+        background-color: rgba(10, 21, 34, 0.75);
+    }
 }
 
-dialog > *:first-child {
-    margin-top: var(--dialog-margin);
+[popover] {
+    margin: 0;
+    padding: 1rem;
+    color: white;
+    border: none;
+    background-color: rgba(20, 20, 20, 0.75);
+    box-shadow: 0em 0em 1em 0em rgba(128, 128, 128, 0.1);
 }
 
-dialog > *:last-child {
-    margin-bottom: var(--dialog-margin);
-}
+#progress {
+    #progress-label {
+        white-space: nowrap;
+        position: relative;
+        text-align: left;
+        width: 5ch;
+    }
 
-dialog::backdrop {
-    background-color: rgba(10, 21, 34, 0.75);
-}
-
-#progress-label {
-    white-space: nowrap;
-    position: relative;
-    text-align: left;
-    width: 5ch;
-}
-
-#progress-label::after {
-    content: attr(data-note);
-    position: absolute;
-    direction: rtl;
-    bottom: -1em;
-    left: -1em;
-    width: 0;
+    #progress-label::after {
+        content: attr(data-note);
+        position: absolute;
+        direction: rtl;
+        bottom: -1em;
+        left: -1em;
+        width: 0;
+    }
 }
 
 /* Animations */

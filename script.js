@@ -368,8 +368,8 @@ class Logger {
 const MAGIC = 'NXDT';
 
 const VERSION = {
-    MAJOR: 2,
-    MINOR: 5,
+    MAJOR: 3,
+    MINOR: 0,
     MICRO: 0
 };
 
@@ -381,6 +381,10 @@ function assert(value, message) {
     if (value) return;
     logger.error(message);
     throw new Error(message);
+}
+
+function parseBool(value) {
+    return /(1|y|t|yes|true)/i.test(value);
 }
 
 function setValueText(e, value) {
@@ -794,7 +798,7 @@ class NxdtClient {
 
     getChecksum(path) {
         if (!this.context.verify) return;
-        return /(?<=^|\/)(?<hash>[0-9a-f]{32})(\.[^\/]+)*\.\x6e\x63\x61$/.exec(path)?.groups?.hash;
+        return /(?<=^|\/)(?<hash>[0-9a-f]{32})(?:\.[^\/]+)*(?=\.\x6e\x63\x61$)/.exec(path)?.groups?.hash;
     }
 
     /* PROTOCOL */
@@ -1275,14 +1279,14 @@ async function requestDevice() {
     await handleSession();
 }
 
-function toggleSimple() {
-    simpleButton.enabled = !simpleButton.enabled;
+function toggleSimple(value = undefined) {
+    simpleButton.enabled = value !== undefined ? value : !simpleButton.enabled;
     logger.info(`app: setting changed (simple=${simpleButton.enabled})`);
     setValueText(simpleButton, simpleButton.enabled ? 'Enabled' : 'Disabled');
 }
 
-function toggleVerify() {
-    verifyButton.enabled = !verifyButton.enabled;
+function toggleVerify(value = undefined) {
+    verifyButton.enabled = value !== undefined ? value : !verifyButton.enabled;
     logger.info(`app: setting changed (verify=${verifyButton.enabled})`);
     setValueText(verifyButton, verifyButton.enabled ? 'Enabled' : 'Disabled');
 }
@@ -1431,7 +1435,17 @@ function getContext() {
 
 function appInfo() {
     const version = `${VERSION.MAJOR}.${VERSION.MINOR}.${VERSION.MICRO}`;
-    logger.debug(`app: client info (version=${version})`);
+    logger.debug(`app: client info (version=${version}, location=${location.href})`);
+
+    for (const [key, value] of new URLSearchParams(location.search)) switch (key) {
+        case 'simple':
+            toggleSimple(parseBool(value));
+            break;
+        case 'verify':
+            toggleVerify(parseBool(value));
+            break;
+    }
+
     setValueText(debugButton, version);
 }
 
