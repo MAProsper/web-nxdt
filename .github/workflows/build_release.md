@@ -5,5 +5,5 @@ All apps are portable and automatically update, but they do need an internet con
 ---
 
 - Windows (64 bit): [`Web-NXDT.exe`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.exe)
-- macOS (M-Series): [`Web-NXDT.app.zip`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.app.zip)
+- macOS (M-Series): [`Web-NXDT.app`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.app.zip)
 - Linux (64 bit): [`Web-NXDT.AppImage`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.AppImage)
