@@ -1,6 +1,6 @@
 Dedicated apps are not required, but if you don't have a supported browser, these can be used as an alternative.
 
-All apps are portable and don't require installation, but they do need an internet connection on first run.
+All apps are portable and automatically update, but they do need an internet connection on first run.
 
 ---
 
