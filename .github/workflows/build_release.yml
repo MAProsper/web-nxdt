@@ -4,15 +4,16 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container: debian:13
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Install dependencies
         working-directory: .build
         run: |
-          sudo apt update
-          sudo apt install -y make
-          sudo make install
+          apt-get update
+          apt-get install -y make
+          make install
       - name: Build release
         working-directory: .build
         run: make -j

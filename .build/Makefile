@@ -8,7 +8,7 @@ packed: windows macos linux
 
 # RESOURCES
 install:
-	apt install -y wget ca-certificates unzip zip tar icoutils icnsutils nsis sed file chromium
+	apt-get install -y wget ca-certificates unzip zip tar icoutils icnsutils nsis sed file chromium
 
 windows/nwjs.zip:
 	wget -nv -O $@ https://dl.nwjs.io/v$(NWJS_VERSION)/nwjs-v$(NWJS_VERSION)-win-x64.zip
