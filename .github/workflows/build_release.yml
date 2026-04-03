@@ -8,13 +8,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Install dependencies
-        working_directory: .build
+        working-directory: .build
         run: |
           sudo apt update
           sudo apt install -y make
           sudo make install
       - name: Build release
-        working_directory: .build
+        working-directory: .build
         run: make -j
       - name: Upload release
         uses: softprops/action-gh-release@v2
