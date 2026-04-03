@@ -27,8 +27,7 @@ jobs:
           overwrite_files: true
           fail_on_unmatched_files: true
           working_directory: .build
-          body: |
-            Requires internet during the initial setup
+          body_path: .github/workflows/build_release.md
           files: |
             windows/Web-NXDT.exe
             macos/Web-NXDT.app.zip

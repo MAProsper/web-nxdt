@@ -1,8 +1,9 @@
 # Web-NXDT - NXDumpTool Web Client
 Web version of NXDT USB host tool
 
-Use it from: <https://nxdt.m16r.xyz>  
-Download it from: [GitHub Releases](https://github.com/MAProsper/web-nxdt/releases)  
+Try it out at: <https://nxdt.m16r.xyz>  
+You can also use it offline or install it.  
+If you prefer dedicated apps: [GitHub Releases](https://github.com/MAProsper/web-nxdt/releases)  
 
 ![Demo](.meta.gif)
 
