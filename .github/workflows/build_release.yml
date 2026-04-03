@@ -1,0 +1,34 @@
+name: Build release
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        working_directory: .build
+        run: |
+          sudo apt update
+          sudo apt install -y make
+          sudo make install
+      - name: Build release
+        working_directory: .build
+        run: make -j
+      - name: Upload release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Latest build
+          tag_name: continuous
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          working_directory: .build
+          body: |
+            Requires internet during the initial setup
+          files: |
+            windows/Web-NXDT.exe
+            macos/Web-NXDT.app.zip
+            linux/Web-NXDT.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,11 @@
+{
+    "name": "web-nxdt",
+    "main": "https://nxdt.m16r.xyz",
+    "nodejs": false,
+    "window": {
+        "id": "nxdt.m16r.xyz",
+        "icon": "favicon.png",
+        "width": 850,
+        "height": 650
+    }
+}

@@ -1,0 +1,13 @@
+#!/usr/bin/env makensis
+OutFile "Web-NXDT.exe"
+Icon "icon.ico"
+
+RequestExecutionLevel user
+SilentInstall silent
+
+Section
+    SetOverwrite ifnewer
+    SetOutPath "$LOCALAPPDATA/web-nxdt"
+    File /r "Web-NXDT/*"
+    Exec "$LOCALAPPDATA/web-nxdt/nw.exe"
+SectionEnd
