@@ -10,14 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     container: debian:13
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-      - name: Install dependencies
-        working-directory: .build
+      - name: Container dependencies
         run: |
           apt-get update
           apt-get install -y git make
-          make install
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Project dependencies
+        working-directory: .build
+        run: make install
       - name: Build release
         working-directory: .build
         run: make -j
