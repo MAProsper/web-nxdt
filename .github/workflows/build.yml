@@ -11,7 +11,7 @@ jobs:
     container: debian:13
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install dependencies
         working-directory: .build
         run: |
@@ -22,6 +22,7 @@ jobs:
         working-directory: .build
         run: make -j
       - name: Update tag
+        working-directory: .
         run: |
           git tag -f continuous
           git push origin continuous --force
