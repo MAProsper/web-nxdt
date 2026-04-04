@@ -1,6 +1,8 @@
 name: Build release
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 permissions:
   contents: write
 jobs:
@@ -26,8 +28,8 @@ jobs:
           tag_name: continuous
           overwrite_files: true
           fail_on_unmatched_files: true
+          body_path: .build/README.md
           working_directory: .build
-          body_path: .github/workflows/build_release.md
           files: |
             windows/Web-NXDT.exe
             macos/Web-NXDT.app.zip
