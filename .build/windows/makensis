@@ -7,7 +7,7 @@ SilentInstall silent
 
 Section
     SetOverwrite ifnewer
-    SetOutPath "$LOCALAPPDATA/web-nxdt"
-    File /r "Web-NXDT/*"
-    Exec "$LOCALAPPDATA/web-nxdt/nw.exe"
+    SetOutPath "$LOCALAPPDATA\Web-NXDT"
+    File /r "Web-NXDT\*"
+    Exec "$LOCALAPPDATA\Web-NXDT\nw.exe"
 SectionEnd

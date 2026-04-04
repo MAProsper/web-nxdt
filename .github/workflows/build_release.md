@@ -2,8 +2,15 @@ Dedicated apps are not required, but if you don't have a supported browser, thes
 
 All apps are portable and automatically update, but they do need an internet connection on first run.
 
----
+## Windows (64 bit)
+Download: [`Web-NXDT.exe`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.exe)
 
-- Windows (64 bit): [`Web-NXDT.exe`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.exe)
-- macOS (M-Series): [`Web-NXDT.app`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.app.zip)
-- Linux (64 bit): [`Web-NXDT.AppImage`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.AppImage)
+*SmartScreen* will block the app, but you can click on `More info` and `Run anyways`.
+
+## macOS (M-Series)
+Download: [`Web-NXDT.app`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.app.zip)
+
+*Gatekeeper* will block the app, but you can allow it by ruining `sudo xattr -cr Web-NXDT.app`.
+
+## Linux (64 bit)
+Donwload: [`Web-NXDT.AppImage`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.AppImage)
