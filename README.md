@@ -8,7 +8,7 @@ If you need dedicated apps: [GitHub Releases](https://github.com/MAProsper/web-n
 ![Demo](.meta.gif)
 
 ## Compatibility
-Tested on Windows, macOS, Linux on Chromium-based browsers.  
+Tested on Windows, macOS and Linux on Chromium-based browsers.  
 Uses feature detection, so it may function on other systems and browsers.  
 
 Requires support for [WebUSB](https://developer.mozilla.org/docs/Web/API/WebUSB_API) and [window.showDirectoryPicker](https://developer.mozilla.org/docs/Web/API/Window/showDirectoryPicker).
