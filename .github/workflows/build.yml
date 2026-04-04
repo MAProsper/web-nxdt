@@ -24,7 +24,7 @@ jobs:
       - name: Upload release
         uses: softprops/action-gh-release@v2
         with:
-          name: Latest build
+          name: Continuous build
           tag_name: continuous
           overwrite_files: true
           fail_on_unmatched_files: true
