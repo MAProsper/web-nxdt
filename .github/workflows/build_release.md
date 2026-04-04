@@ -13,4 +13,4 @@ Download: [`Web-NXDT.app`](https://github.com/MAProsper/web-nxdt/releases/downlo
 *Gatekeeper* will block the app, but you can allow it by ruining `sudo xattr -cr Web-NXDT.app`.
 
 ## Linux (64 bit)
-Donwload: [`Web-NXDT.AppImage`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.AppImage)
+Download: [`Web-NXDT.AppImage`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.AppImage)
