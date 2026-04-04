@@ -14,3 +14,5 @@ Download: [`Web-NXDT.app`](https://github.com/MAProsper/web-nxdt/releases/downlo
 
 ## Linux (64 bit)
 Download: [`Web-NXDT.AppImage`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.AppImage)
+
+Once downloaded, you should give it execution permission by running `chmod u+x Web-NXDT.AppImage`.

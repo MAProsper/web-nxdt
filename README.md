@@ -3,7 +3,7 @@ Web version of NXDT USB host tool
 
 Try it out at: <https://nxdt.m16r.xyz>  
 You can also use it offline or install it.  
-If you prefer dedicated apps: [GitHub Releases](https://github.com/MAProsper/web-nxdt/releases)  
+If you need dedicated apps: [GitHub Releases](https://github.com/MAProsper/web-nxdt/releases)  
 
 ![Demo](.meta.gif)
 
