@@ -26,11 +26,6 @@ jobs:
       - name: Build release
         working-directory: .build
         run: make -j
-      - name: Update tag
-        working-directory: .
-        run: |
-          git tag -f continuous
-          git push origin continuous --force
       - name: Upload release
         uses: softprops/action-gh-release@v2
         with:
@@ -44,3 +39,8 @@ jobs:
             windows/Web-NXDT.exe
             macos/Web-NXDT.app.zip
             linux/Web-NXDT.AppImage
+      - name: Update source
+        working-directory: .
+        run: |
+          git tag -f continuous
+          git push origin continuous --force
