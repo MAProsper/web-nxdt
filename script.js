@@ -578,7 +578,10 @@ class FsQueue {
         logger.debug('fs: committing');
         if (!this.queue.size) this.open();
         this.queue.add(promise);
-        promise.catch((e) => logger.error(e));
+        promise.catch((e) => {
+            notify('Disk error');
+            logger.error(e);
+        });
         promise.finally(() => {
             logger.debug('fs: committed');
             this.queue.delete(promise);
