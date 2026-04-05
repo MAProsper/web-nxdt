@@ -551,7 +551,7 @@ class FsQueue {
     queue = new Set();
 
     constructor() {
-        return this.commit.bind(this);
+        return this.push.bind(this);
     }
 
     open() {
@@ -574,11 +574,12 @@ class FsQueue {
         }
     }
 
-    commit(promise) {
+    push(promise) {
         logger.debug('fs: committing');
         if (!this.queue.size) this.open();
         this.queue.add(promise);
-        promise.then(() => {
+        promise.catch((e) => logger.error(e));
+        promise.finally(() => {
             logger.debug('fs: committed');
             this.queue.delete(promise);
             if (!this.queue.size) this.close();
@@ -765,7 +766,7 @@ class NxdtClient {
     constructor(device, getContext) {
         this.device = device;
         this.getContext = getContext;
-        this.fsCommit = new FsQueue();
+        this.fsQueue = new FsQueue();
     }
 
     /* HELPERS */
@@ -870,7 +871,7 @@ class NxdtClient {
                 success &&= await this.handleFileTransfer(file, fileSize);
             }
         } finally {
-            this.fsCommit(file.close());
+            this.fsQueue(file.close());
             progressDialog.close();
         }
 
@@ -897,9 +898,9 @@ class NxdtClient {
         const hasher = new Sha256();
         let success = true;
 
-        let offset = 0;
-        while (offset < size) {
-            const chunkSize = Math.min(this.USB.BULK_SIZE, size - offset);
+        let written = 0;
+        while (written < size) {
+            const chunkSize = Math.min(this.USB.BULK_SIZE, size - written);
             const chunk = await this.device.readChunk(chunkSize, this.USB.TIMEOUT);
 
             // Check if we're dealing with a command
@@ -914,15 +915,15 @@ class NxdtClient {
             await this.assert(chunk.length === chunkSize, this.STATUS.HOST_IO_ERROR);
 
             // Write current chunk.
-            await file.write(chunk);
+            await file.write({ type: "write", data: chunk });
             if (hash) hasher.update(chunk);
             progressDialog.update(chunk.length);
-            offset += chunk.length;
+            written += chunk.length;
         }
         await this.device.readEnd(this.USB.TIMEOUT);
 
         if (size > 0) await this.sendStatus(this.STATUS.SUCCESS);
-        success &&= offset === size;
+        success &&= written === size;
 
         // Handle checksum
         if (!hash) return success;
@@ -939,10 +940,10 @@ class NxdtClient {
         let success = true;
 
         // Skip header
-        await file.seek(headerSize);
+        await file.write({ type: "seek", position: headerSize });
 
         // File entries
-        let offset = 0;
+        let written = 0;
         loop: while (true) {
             ({ cmdId, cmdData } = await this.getCmd());
             switch (cmdId) {
@@ -957,18 +958,17 @@ class NxdtClient {
             await this.sendStatus(this.STATUS.SUCCESS);
 
             success &&= await this.handleFileTransfer(file, fileSize, this.getChecksum(filePath));
-            offset += fileSize;
+            written += fileSize;
         }
 
         // File header
         await this.assert(cmdId === this.COMMAND.HEADER_TRANSFER && cmdData.length === headerSize, this.STATUS.MALFORMED_CMD);
 
-        await file.seek(0);
-        await file.write(cmdData);
+        await file.write({ type: "write", position: 0, data: cmdData });
         progressDialog.update(cmdData.length);
-        offset += cmdData.length;
+        written += cmdData.length;
 
-        success &&= offset === (headerSize + dataSize);
+        success &&= written === (headerSize + dataSize);
         await this.sendStatus(this.STATUS.SUCCESS);
 
         return success;
@@ -1010,7 +1010,7 @@ class NxdtClient {
         let success = true;
 
         // Transfer FS
-        let offset = 0;
+        let written = 0;
         loop: while (true) {
             ({ cmdId, cmdData } = await this.getCmd());
             switch (cmdId) {
@@ -1027,14 +1027,14 @@ class NxdtClient {
                 await this.sendStatus(this.STATUS.SUCCESS);
 
                 success &&= await this.handleFileTransfer(file, fileSize);
-                offset += fileSize;
+                written += fileSize;
             } finally {
-                this.fsCommit(file.close());
+                this.fsQueue(file.close());
             }
         }
 
         await this.handleEndTransferCmd(cmdId, cmdData);
-        success &&= offset === fsSize;
+        success &&= written === fsSize;
 
         return success;
     }
@@ -1097,7 +1097,7 @@ class NxdtClient {
                 success &&= await this.handleArchiveTransfer(file, headerSize, fileSize - headerSize);
                 await this.sendStatus(this.STATUS.SUCCESS);
             } finally {
-                this.fsCommit(file.close());
+                this.fsQueue(file.close());
             }
             count++;
         }
