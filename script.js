@@ -579,7 +579,7 @@ class FsQueue {
         if (!this.queue.size) this.open();
         this.queue.add(promise);
         promise.catch((e) => {
-            notify('Disk error');
+            notify('Disk error', true);
             logger.error(e);
         });
         promise.finally(() => {
