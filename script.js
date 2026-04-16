@@ -1517,12 +1517,12 @@ appInfo();
 browserSupport();
 deviceSupport();
 
-directoryButton.addEventListener('click', requestDirectory);
-deviceButton.addEventListener('click', requestDevice);
-simpleButton.addEventListener('click', toggleSimple);
-verifyButton.addEventListener('click', toggleVerify);
-debugButton.addEventListener('click', generateDebug);
-notifyButton.addEventListener('click', requestNotify);
+directoryButton.addEventListener('click', () => requestDirectory());
+deviceButton.addEventListener('click', () => requestDevice());
+simpleButton.addEventListener('click', () => toggleSimple());
+verifyButton.addEventListener('click', () => toggleVerify());
+debugButton.addEventListener('click', () => generateDebug());
+notifyButton.addEventListener('click', () => requestNotify());
 
 syncNotify();
 syncWorker();
