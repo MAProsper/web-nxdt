@@ -1225,6 +1225,28 @@ class NxdtClientCompat0 extends NxdtClientCompat1 {
 }
 
 // === APP ===
+function getContext() {
+    return {
+        directory: directoryButton.directory,
+        simple: simpleButton.enabled,
+        verify: verifyButton.enabled
+    }
+}
+
+function syncURL() {
+    const search = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(getContext())) switch (key) {
+        case 'simple':
+        case 'verify':
+            if (value === undefined) continue;
+            search.set(key, Boolean(value))
+            break;
+    }
+
+    history.replaceState(null, '', `?${search}`);
+}
+
 async function requestDirectory() {
     let directory;
     spinnerDialog.open('Requesting…', 'Destination directory');
@@ -1286,12 +1308,14 @@ function toggleSimple(value = undefined) {
     simpleButton.enabled = value !== undefined ? value : !simpleButton.enabled;
     logger.info(`app: setting changed (simple=${simpleButton.enabled})`);
     setValueText(simpleButton, simpleButton.enabled ? 'Enabled' : 'Disabled');
+    syncURL();
 }
 
 function toggleVerify(value = undefined) {
     verifyButton.enabled = value !== undefined ? value : !verifyButton.enabled;
     logger.info(`app: setting changed (verify=${verifyButton.enabled})`);
     setValueText(verifyButton, verifyButton.enabled ? 'Enabled' : 'Disabled');
+    syncURL();
 }
 
 function generateDebug() {
@@ -1426,14 +1450,6 @@ async function handleSession() {
     }
 
     notify('Device disconnected');
-}
-
-function getContext() {
-    return {
-        directory: directoryButton.directory,
-        simple: simpleButton.enabled,
-        verify: verifyButton.enabled
-    }
 }
 
 function appInfo() {
