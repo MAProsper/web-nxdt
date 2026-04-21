@@ -1260,8 +1260,8 @@ async function requestDirectory() {
     }
     directoryButton.directory = directory;
 
-    setValueText(directoryButton, directory.name);
     logger.info(`client: setting changed (directory=${directory.name})`);
+    setValueText(directoryButton, directory.name);
 
     // First setup
     if (!deviceButton.disabled) return;
