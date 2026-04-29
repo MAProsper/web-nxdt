@@ -10,7 +10,7 @@ Download: [`Web-NXDT.exe`](https://github.com/MAProsper/web-nxdt/releases/downlo
 ## macOS (M-Series)
 Download: [`Web-NXDT.app`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.app.zip)
 
-*Gatekeeper* will block the app, but you can allow it by ruining `sudo xattr -cr Web-NXDT.app`.
+*Gatekeeper* will block the app, but you can allow it by running `sudo xattr -cr Web-NXDT.app`.
 
 ## Linux (64 bit)
 Download: [`Web-NXDT.AppImage`](https://github.com/MAProsper/web-nxdt/releases/download/continuous/Web-NXDT.AppImage)
